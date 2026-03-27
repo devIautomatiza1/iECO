@@ -1,4 +1,6 @@
-"""database.py - Acceso a BD con retry y manejo de errores mejorado"""
+"""database.py - Acceso a BD PostgreSQL con retry y manejo de errores"""
+import os
+import shutil
 import streamlit as st
 from datetime import datetime
 from pathlib import Path
@@ -8,21 +10,23 @@ import time
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from logger import get_logger
-from helpers import db_operation, validate_file
+from helpers import validate_file
 
 logger = get_logger(__name__)
 
 try:
-    from supabase import create_client, Client
+    import psycopg2
+    import psycopg2.extras
 except ImportError:
-    create_client = None
-    logger.warning("⚠️  Supabase no instalado")
+    psycopg2 = None
+    logger.warning("⚠️  psycopg2 no instalado")
 
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
 MAX_RETRIES = 3
 RETRY_DELAY = 1  # segundos
+RECORDINGS_DIR = Path(os.getenv("RECORDINGS_DIR", "/data/recordings"))
 
 # ============================================================================
 # UTILIDADES
@@ -35,19 +39,8 @@ def retry_operation(
     delay: float = RETRY_DELAY,
     **kwargs
 ) -> Any:
-    """Reintenta una operación BD con backoff exponencial
-    
-    Args:
-        func: Función a ejecutar
-        retries: Número máximo de reintentos
-        delay: Tiempo inicial entre reintentos (se duplica cada intento)
-        *args, **kwargs: Argumentos para la función
-        
-    Returns:
-        Resultado de la función o None si falla
-    """
+    """Reintenta una operación BD con backoff exponencial"""
     last_exception = None
-    
     for attempt in range(retries):
         try:
             return func(*args, **kwargs)
@@ -59,311 +52,317 @@ def retry_operation(
                 time.sleep(wait_time)
             else:
                 logger.error(f"Operación falló después de {retries} intentos: {type(e).__name__}")
-    
     return None
 
 # ============================================================================
-# CONEXIÓN A SUPABASE
-# ============================================================================
-
-# ============================================================================
-# CONEXIÓN A SUPABASE
+# CONEXIÓN A POSTGRESQL
 # ============================================================================
 
 @st.cache_resource
-def init_supabase() -> Optional[Client]:
-    """Inicializa cliente de Supabase con manejo de errores"""
+def init_db():
+    """Inicializa conexión a PostgreSQL con manejo de errores"""
     try:
-        import os
-        url = os.getenv("SUPABASE_URL", "").strip()
-        key = os.getenv("SUPABASE_KEY", "").strip()
-        if not url or not key:
-            logger.error("❌ Credentials no configuradas")
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        if not database_url:
+            logger.error("❌ DATABASE_URL no configurada")
             return None
-        client = create_client(url, key)
-        logger.info("✓ Conexión Supabase OK")
-        return client
+        conn = psycopg2.connect(database_url)
+        conn.autocommit = True
+        logger.info("✓ Conexión PostgreSQL OK")
+        _ensure_tables(conn)
+        _ensure_recordings_dir()
+        return conn
     except Exception as e:
-        logger.error(f"❌ Init Supabase: {e}")
+        logger.error(f"❌ Init PostgreSQL: {e}")
         return None
 
-# ============================================================================
-# OPERACIONES DE TABLA GENÉRICAS
-# ============================================================================
+def _ensure_recordings_dir():
+    """Crea el directorio de grabaciones si no existe"""
+    RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"✓ Directorio de grabaciones: {RECORDINGS_DIR}")
 
-def _execute_table_operation(
-    db,
-    table: str,
-    method: str,
-    filters: Optional[Dict[str, Any]] = None,
-    data: Optional[Dict[str, Any]] = None,
-    order_by: Optional[str] = None,
-    desc: bool = False
-) -> Optional[List[Dict]]:
-    """Ejecuta una operación genérica en tabla con manejo de errores
-    
-    Args:
-        db: Cliente Supabase
-        table: Nombre de tabla
-        method: 'select', 'insert', 'update', 'delete'
-        filters: Dict de filtros {column: value}
-        data: Datos para insert/update
-        order_by: Columna para ordenar
-        desc: Si es descendente
-    """
+def _ensure_tables(conn):
+    """Crea las tablas si no existen"""
     try:
-        query = db.table(table)
-        
-        if method == "select":
-            query = query.select("*")
-        elif method == "insert":
-            query = query.insert(data or {})
-        elif method == "update":
-            query = query.update(data or {})
-        elif method == "delete":
-            query = query.delete()
-        
-        # Aplicar filtros
-        if filters:
-            for col, val in filters.items():
-                query = query.eq(col, val)
-        
-        # Aplicar ordering
-        if order_by:
-            query = query.order(order_by, desc=desc)
-        
-        result = query.execute()
-        return result.data if result and result.data else []
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS recordings (
+                    id SERIAL PRIMARY KEY,
+                    filename TEXT NOT NULL UNIQUE,
+                    filepath TEXT NOT NULL,
+                    transcription TEXT,
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS transcriptions (
+                    id SERIAL PRIMARY KEY,
+                    recording_id INTEGER REFERENCES recordings(id) ON DELETE CASCADE,
+                    content TEXT NOT NULL,
+                    language TEXT DEFAULT 'es',
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                );
+
+                CREATE TABLE IF NOT EXISTS opportunities (
+                    id SERIAL PRIMARY KEY,
+                    recording_id INTEGER REFERENCES recordings(id) ON DELETE CASCADE,
+                    title TEXT NOT NULL,
+                    description TEXT,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+        logger.info("✓ Tablas verificadas")
     except Exception as e:
-        logger.error(f"DB {method} {table}: {type(e).__name__}")
-        return [] if method == "select" else None
+        logger.error(f"❌ Error creando tablas: {e}")
 
+# ============================================================================
+# STORAGE LOCAL — reemplaza Supabase Storage
+# ============================================================================
 
-
-@db_operation
-def upload_audio_to_storage(db, filename: str, filepath: str) -> bool:
-    """Sube audio a Supabase Storage"""
+def upload_audio_to_storage(filename: str, filepath: str) -> bool:
+    """Copia audio al directorio de grabaciones del VPS"""
     valid, err = validate_file(filepath)
     if not valid:
         logger.error(f"❌ {err}")
         return False
     try:
-        with open(filepath, "rb") as f:
-            db.storage.from_("recordings").upload(filename, f.read(), {"upsert": "true"})
-        logger.info(f"✓ {filename} subido a Storage")
+        dest = RECORDINGS_DIR / filename
+        shutil.copy2(filepath, dest)
+        logger.info(f"✓ {filename} guardado en {dest}")
         return True
     except Exception as e:
-        logger.error(f"❌ Storage upload: {type(e).__name__}")
+        logger.error(f"❌ Storage upload: {type(e).__name__} - {e}")
         return False
 
-@db_operation
-def download_audio_from_storage(db, filename: str, save_to: str) -> bool:
-    """Descarga audio de Storage"""
+def download_audio_from_storage(filename: str, save_to: str) -> bool:
+    """Copia audio desde el directorio de grabaciones"""
     try:
-        response = db.storage.from_("recordings").download(filename)
-        Path(save_to).write_bytes(response)
+        src = RECORDINGS_DIR / filename
+        if not src.exists():
+            logger.warning(f"Archivo no encontrado: {src}")
+            return False
+        shutil.copy2(src, save_to)
         return True
     except Exception as e:
         logger.warning(f"Download: {str(e)}")
         return False
 
-@db_operation
-def delete_audio_from_storage(db, filename: str) -> bool:
-    """Elimina audio de Storage"""
+def delete_audio_from_storage(filename: str) -> bool:
+    """Elimina audio del directorio de grabaciones"""
     try:
-        db.storage.from_("recordings").remove([filename])
+        target = RECORDINGS_DIR / filename
+        if target.exists():
+            target.unlink()
         return True
-    except:
+    except Exception as e:
+        logger.warning(f"Delete storage: {e}")
         return False
 
-@db_operation
-def save_recording_to_db(db, filename: str, filepath: str, transcription: Optional[str] = None) -> Optional[str]:
-    """Sube a Storage + guarda en BD"""
+# ============================================================================
+# OPERACIONES DE BASE DE DATOS
+# ============================================================================
+
+def save_recording_to_db(filename: str, filepath: str, transcription: Optional[str] = None) -> Optional[int]:
+    """Copia audio al storage + guarda metadata en BD"""
+    db = init_db()
+    if not db:
+        return None
+
     logger.info(f"[1/2] Storage: {filename}")
     if not upload_audio_to_storage(filename, filepath):
-        logger.error(f"[FAIL] Storage")
+        logger.error("[FAIL] Storage")
         return None
-    
+
     logger.info(f"[2/2] BD metadata")
     try:
-        result = db.table("recordings").insert({
-            "filename": filename,
-            "filepath": filepath,
-            "transcription": transcription,
-            "created_at": datetime.now().isoformat()
-        }).execute()
-        recording_id = result.data[0]["id"] if result.data else None
-        if recording_id:
+        with db.cursor() as cur:
+            cur.execute("""
+                INSERT INTO recordings (filename, filepath, transcription, created_at)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+            """, (filename, filepath, transcription, datetime.now()))
+            recording_id = cur.fetchone()[0]
             logger.info(f"✓ Recording ID: {recording_id}")
-        return recording_id
-    except:
+            return recording_id
+    except Exception as e:
+        logger.error(f"❌ BD insert: {e}")
         return None
 
-@db_operation
-def get_all_recordings(db) -> List[Dict]:
+def get_all_recordings() -> List[Dict]:
     """Obtiene todas las grabaciones"""
-    return _execute_table_operation(db, "recordings", "select")
-
-@db_operation
-def update_transcription(db, recording_id: str, transcription: str) -> bool:
-    """Actualiza transcripción"""
-    return bool(_execute_table_operation(
-        db, "recordings", "update",
-        filters={"id": recording_id},
-        data={"transcription": transcription, "updated_at": datetime.now().isoformat()}
-    ))
-
-@db_operation
-def update_recording_filename(db, old_filename: str, new_filename: str) -> bool:
-    """
-    Actualiza el nombre del archivo de grabación en Supabase Storage y BD.
-    
-    Realiza:
-    1. Descargar archivo de Storage con nombre antiguo
-    2. Subir a Storage con nombre nuevo
-    3. Eliminar archivo antiguo de Storage
-    4. Actualizar BD con nuevo nombre
-    """
+    db = init_db()
+    if not db:
+        return []
     try:
-        # 1. Descargar archivo con nombre antiguo
-        logger.info(f"[1/4] Descargando {old_filename} de Storage...")
-        try:
-            audio_data = db.storage.from_("recordings").download(old_filename)
-            if not audio_data:
-                logger.error(f"❌ No se pudo descargar {old_filename}")
-                return False
-        except Exception as e:
-            logger.error(f"❌ Error descargando: {e}")
-            return False
-        
-        # 2. Subir a Storage con nombre nuevo
-        logger.info(f"[2/4] Subiendo como {new_filename}...")
-        try:
-            db.storage.from_("recordings").upload(
-                new_filename, 
-                audio_data, 
-                {"upsert": "false"}  # No sobrescribir si ya existe
-            )
-        except Exception as e:
-            logger.error(f"❌ Error subiendo: {e}")
-            return False
-        
-        # 3. Eliminar archivo antiguo de Storage
-        logger.info(f"[3/4] Eliminando {old_filename} de Storage...")
-        try:
-            db.storage.from_("recordings").remove([old_filename])
-        except Exception as e:
-            logger.warning(f"⚠️  Error eliminando archivo antiguo: {e}")
-            # No es crítico, continuamos
-        
-        # 4. Actualizar BD
-        logger.info(f"[4/4] Actualizando BD...")
-        result = _execute_table_operation(
-            db, "recordings", "update",
-            filters={"filename": old_filename},
-            data={"filename": new_filename, "updated_at": datetime.now().isoformat()}
-        )
-        
-        if result:
-            logger.info(f"✓ Nombre actualizado completamente: {old_filename} → {new_filename}")
-            return True
-        else:
-            # Si la BD falla, intentar revertir en Storage
-            logger.error("❌ Error actualizando BD. Revertiendo cambios en Storage...")
-            try:
-                db.storage.from_("recordings").remove([new_filename])
-                # Re-subir con nombre antiguo
-                db.storage.from_("recordings").upload(
-                    old_filename, 
-                    audio_data, 
-                    {"upsert": "true"}
-                )
-            except:
-                logger.error("❌ Error al revertir. Storage podría estar en estado inconsistente")
-            return False
-            
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM recordings ORDER BY created_at DESC")
+            return [dict(row) for row in cur.fetchall()]
     except Exception as e:
-        logger.error(f"❌ Error al actualizar nombre: {e}")
+        logger.error(f"❌ get_all_recordings: {e}")
+        return []
+
+def update_transcription(recording_id: int, transcription: str) -> bool:
+    """Actualiza transcripción de una grabación"""
+    db = init_db()
+    if not db:
+        return False
+    try:
+        with db.cursor() as cur:
+            cur.execute("""
+                UPDATE recordings SET transcription=%s, updated_at=%s WHERE id=%s
+            """, (transcription, datetime.now(), recording_id))
+        return True
+    except Exception as e:
+        logger.error(f"❌ update_transcription: {e}")
         return False
 
-@db_operation
-def save_opportunity(db, recording_id: str, title: str, description: str) -> bool:
-    """Guarda oportunidad"""
-    return bool(_execute_table_operation(
-        db, "opportunities", "insert",
-        data={"recording_id": recording_id, "title": title, "description": description, "created_at": datetime.now().isoformat()}
-    ))
-
-@db_operation
-def get_opportunities_by_recording(db, recording_id: str) -> List[Dict]:
-    """Obtiene oportunidades"""
-    return _execute_table_operation(db, "opportunities", "select", filters={"recording_id": recording_id})
-
-@db_operation
-def delete_recording_from_db(db, recording_id: int) -> bool:
-    """Elimina recording + sus oportunidades"""
+def update_recording_filename(old_filename: str, new_filename: str) -> bool:
+    """Renombra archivo en storage y actualiza BD"""
+    db = init_db()
+    if not db:
+        return False
     try:
-        result = db.table("recordings").select("filename").eq("id", recording_id).execute()
-        filename = result.data[0]["filename"] if result.data else None
-        
-        db.table("opportunities").delete().eq("recording_id", recording_id).execute()
-        db.table("recordings").delete().eq("id", recording_id).execute()
-        
+        src = RECORDINGS_DIR / old_filename
+        dest = RECORDINGS_DIR / new_filename
+        if not src.exists():
+            logger.error(f"❌ Archivo no encontrado: {src}")
+            return False
+
+        logger.info(f"[1/2] Renombrando archivo...")
+        src.rename(dest)
+
+        logger.info(f"[2/2] Actualizando BD...")
+        with db.cursor() as cur:
+            cur.execute("""
+                UPDATE recordings SET filename=%s, updated_at=%s WHERE filename=%s
+            """, (new_filename, datetime.now(), old_filename))
+
+        logger.info(f"✓ {old_filename} → {new_filename}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ update_recording_filename: {e}")
+        if dest.exists() and not src.exists():
+            dest.rename(src)
+        return False
+
+def save_opportunity(recording_id: int, title: str, description: str) -> bool:
+    """Guarda una oportunidad de negocio"""
+    db = init_db()
+    if not db:
+        return False
+    try:
+        with db.cursor() as cur:
+            cur.execute("""
+                INSERT INTO opportunities (recording_id, title, description, created_at)
+                VALUES (%s, %s, %s, %s)
+            """, (recording_id, title, description, datetime.now()))
+        return True
+    except Exception as e:
+        logger.error(f"❌ save_opportunity: {e}")
+        return False
+
+def get_opportunities_by_recording(recording_id: int) -> List[Dict]:
+    """Obtiene oportunidades de una grabación"""
+    db = init_db()
+    if not db:
+        return []
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM opportunities WHERE recording_id=%s", (recording_id,))
+            return [dict(row) for row in cur.fetchall()]
+    except Exception as e:
+        logger.error(f"❌ get_opportunities_by_recording: {e}")
+        return []
+
+def delete_recording_from_db(recording_id: int) -> bool:
+    """Elimina grabación, sus oportunidades y el archivo de audio"""
+    db = init_db()
+    if not db:
+        return False
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT filename FROM recordings WHERE id=%s", (recording_id,))
+            row = cur.fetchone()
+            filename = row[0] if row else None
+
+            cur.execute("DELETE FROM opportunities WHERE recording_id=%s", (recording_id,))
+            cur.execute("DELETE FROM recordings WHERE id=%s", (recording_id,))
+
         if filename:
             delete_audio_from_storage(filename)
         return True
-    except:
+    except Exception as e:
+        logger.error(f"❌ delete_recording_from_db: {e}")
         return False
 
-@db_operation
-def delete_recording_by_filename(db, filename: str) -> bool:
+def delete_recording_by_filename(filename: str) -> bool:
     """Busca y elimina por filename"""
+    db = init_db()
+    if not db:
+        return False
     try:
-        result = db.table("recordings").select("id").eq("filename", filename).execute()
-        if result.data:
-            return delete_recording_from_db(result.data[0]["id"])
+        with db.cursor() as cur:
+            cur.execute("SELECT id FROM recordings WHERE filename=%s", (filename,))
+            row = cur.fetchone()
+            if row:
+                return delete_recording_from_db(row[0])
         return True
-    except:
+    except Exception as e:
+        logger.error(f"❌ delete_recording_by_filename: {e}")
         return False
 
-@db_operation
-def save_transcription(db, recording_filename: str, content: str, language: str = "es") -> Optional[str]:
-    """Guarda transcripción"""
+def save_transcription(recording_filename: str, content: str, language: str = "es") -> Optional[int]:
+    """Guarda transcripción en tabla transcriptions"""
+    db = init_db()
+    if not db:
+        return None
     try:
-        result = db.table("recordings").select("id").eq("filename", recording_filename).execute()
-        if not result.data:
-            return None
-        
-        recording_id = result.data[0]["id"]
-        trans_result = db.table("transcriptions").insert({
-            "recording_id": recording_id,
-            "content": content,
-            "language": language,
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
-        }).execute()
-        return trans_result.data[0]["id"] if trans_result.data else None
-    except:
+        with db.cursor() as cur:
+            cur.execute("SELECT id FROM recordings WHERE filename=%s", (recording_filename,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            recording_id = row[0]
+            cur.execute("""
+                INSERT INTO transcriptions (recording_id, content, language, created_at, updated_at)
+                VALUES (%s, %s, %s, %s, %s) RETURNING id
+            """, (recording_id, content, language, datetime.now(), datetime.now()))
+            return cur.fetchone()[0]
+    except Exception as e:
+        logger.error(f"❌ save_transcription: {e}")
         return None
 
-@db_operation
-def get_transcription_by_filename(db, recording_filename: str) -> Optional[Dict]:
-    """Obtiene transcripción por filename"""
+def get_transcription_by_filename(recording_filename: str) -> Optional[Dict]:
+    """Obtiene la transcripción más reciente por filename"""
+    db = init_db()
+    if not db:
+        return None
     try:
-        result = db.table("recordings").select("id").eq("filename", recording_filename).execute()
-        if not result.data:
-            return None
-        
-        trans = db.table("transcriptions").select("*").eq("recording_id", result.data[0]["id"]).order("created_at", desc=True).limit(1).execute()
-        return trans.data[0] if trans.data else None
-    except:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id FROM recordings WHERE filename=%s", (recording_filename,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            cur.execute("""
+                SELECT * FROM transcriptions WHERE recording_id=%s
+                ORDER BY created_at DESC LIMIT 1
+            """, (row["id"],))
+            result = cur.fetchone()
+            return dict(result) if result else None
+    except Exception as e:
+        logger.error(f"❌ get_transcription_by_filename: {e}")
         return None
 
-@db_operation
-def delete_transcription_by_id(db, transcription_id: str) -> bool:
-    """Elimina una transcripción"""
+def delete_transcription_by_id(transcription_id: int) -> bool:
+    """Elimina una transcripción por ID"""
+    db = init_db()
+    if not db:
+        return False
     try:
-        db.table("transcriptions").delete().eq("id", transcription_id).execute()
+        with db.cursor() as cur:
+            cur.execute("DELETE FROM transcriptions WHERE id=%s", (transcription_id,))
         return True
-    except:
+    except Exception as e:
+        logger.error(f"❌ delete_transcription_by_id: {e}")
         return False
