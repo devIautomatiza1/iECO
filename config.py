@@ -54,16 +54,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY no está configurada en el archivo .env")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-# Validar credenciales críticas
-if not SUPABASE_URL or not SUPABASE_KEY:
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
     raise ValueError(
-        "Error de configuración: Faltan credenciales de Supabase.\n"
-        "Asegúrate de que .env contiene:\n"
-        "  - SUPABASE_URL\n"
-        "  - SUPABASE_KEY\n"
-        "Para Streamlit Cloud, configúralas en Settings > Secrets"
+        "Error de configuración: Falta DATABASE_URL.\n"
+        "Asegúrate de configurar la variable de entorno DATABASE_URL\n"
+        "con la cadena de conexión a PostgreSQL."
     )
 
 # ============================================================================
