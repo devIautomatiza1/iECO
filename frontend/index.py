@@ -86,27 +86,26 @@ def add_debug_event(message: str, event_type: str = "info") -> None:
     })
 
 def update_recordings_map() -> None:
-    """Actualiza el mapeo de filename → recording_id desde Supabase"""
+    """Actualiza el mapeo de filename → recording_id desde PostgreSQL"""
     try:
-        import os
-        from supabase import create_client
-        supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_KEY")
-        
-        if not supabase_url or not supabase_key:
-            logger.warning("⚠️  Supabase credentials no configuradas")
+        from database import init_db
+        db = init_db()
+        if not db:
+            logger.warning("DB no disponible para actualizar recordings_map")
+            st.session_state.recordings_map = {}
             return
-        
-        client = create_client(supabase_url.strip(), supabase_key.strip())
-        response = client.table("recordings").select("id, filename").order("created_at", desc=True).limit(50).execute()
-        
-        if response and response.data:
-            recordings_map = {rec["filename"]: rec["id"] for rec in response.data}
+ 
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT id, filename FROM recordings ORDER BY created_at DESC LIMIT 50"
+            )
+            rows = cur.fetchall()
+ 
+        if rows:
+            recordings_map = {filename: rec_id for rec_id, filename in rows}
             st.session_state.recordings_map = recordings_map
             logger.info(f"✅ Recordings map actualizado: {len(recordings_map)} registros")
-            logger.debug(f"   Ejemplos: {list(recordings_map.keys())[:3]}")
         else:
-            logger.warning("⚠️  No se obtuvieron recordings de Supabase")
             st.session_state.recordings_map = {}
     except Exception as e:
         logger.error(f"❌ Error actualizando recordings_map: {type(e).__name__} - {str(e)[:100]}")
@@ -1212,52 +1211,41 @@ st.markdown("")
 st.markdown("")
 
 # SECCIÓN DEBUG
-with st.expander("🔧 DEBUG - Estado de Supabase"):
-    show_info_debug("Probando conexión a Supabase...")
-    
+with st.expander("🔧 DEBUG - Estado de base de datos"):
+    show_info_debug("Probando conexión a PostgreSQL...")
     try:
-        # Usar el cliente que ya tenemos en database.py
-        supabase = db_utils.init_supabase()
-        
-        if supabase:
-            # Contar grabaciones
-            test = supabase.table("recordings").select("*", count="exact").execute()
-            record_count = len(test.data) if test.data else 0
-            
-            # Contar oportunidades
-            test_opp = supabase.table("opportunities").select("*", count="exact").execute()
-            opp_count = len(test_opp.data) if test_opp.data else 0
-            
-            # Contar transcripciones
-            test_trans = supabase.table("transcriptions").select("*", count="exact").execute()
-            trans_count = len(test_trans.data) if test_trans.data else 0
-            
-            show_success_debug("¡Conexión establecida correctamente!")
+        from database import init_db
+        db = init_db()
+        if db:
+            with db.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM recordings")
+                record_count = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities")
+                opp_count = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM transcriptions")
+                trans_count = cur.fetchone()[0]
+ 
+            show_success_debug("¡Conexión PostgreSQL establecida!")
             show_success_debug(f"Grabaciones en BD: {record_count}")
             show_success_debug(f"Oportunidades en BD: {opp_count}")
             show_success_debug(f"Transcripciones en BD: {trans_count}")
         else:
-            show_error_debug("Falta SUPABASE_URL o SUPABASE_KEY en Secrets")
-            
+            show_error_debug("No se pudo conectar a PostgreSQL. Verifica DATABASE_URL.")
     except Exception as e:
         show_error_debug(f"Error de conexión: {str(e)}")
         show_info_debug("Posibles soluciones:")
-        st.write("1. Verifica que RLS esté DESHABILITADO en ambas tablas")
-        st.write("2. Haz click en 'Reboot app' en el menú (3 puntos arriba)")
-        st.write("3. Verifica que no haya espacios en blanco en los Secrets")
-    
-    # Mostrar registro de eventos
+        st.write("1. Verifica que DATABASE_URL esté configurada en Coolify")
+        st.write("2. Verifica que el contenedor PostgreSQL esté corriendo")
+        st.write("3. Verifica usuario y contraseña de audio_user")
+ 
     st.markdown("---")
     st.markdown("**📋 Registro de Eventos:**")
-    
     debug_log = st.session_state.get("debug_log", [])
     if debug_log:
-        # Mostrar últimos 20 eventos
         for event in debug_log[-20:]:
             time = event.get("time", "??:??:??")
             event_type = event.get("type", "info")
             message = event.get("message", "")
-            
             if event_type == "success":
                 st.success(f"[{time}] ✓ {message}")
             elif event_type == "error":
