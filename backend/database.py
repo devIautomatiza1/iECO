@@ -163,7 +163,10 @@ def delete_audio_from_storage(filename: str) -> bool:
 # OPERACIONES DE BASE DE DATOS
 # ============================================================================
 
-def save_recording_to_db(filename: str, filepath: str, transcription: Optional[str] = None) -> Optional[int]:
+# PARCHE para database.py
+# Sustituye la función save_recording_to_db por esta versión que acepta user_id y user_email
+
+def save_recording_to_db(filename: str, filepath: str, transcription=None, user_id=None, user_email=None):
     """Copia audio al storage + guarda metadata en BD"""
     db = init_db()
     if not db:
@@ -178,10 +181,10 @@ def save_recording_to_db(filename: str, filepath: str, transcription: Optional[s
     try:
         with db.cursor() as cur:
             cur.execute("""
-                INSERT INTO recordings (filename, filepath, transcription, created_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO recordings (filename, filepath, transcription, user_id, user_email, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING id
-            """, (filename, filepath, transcription, datetime.now()))
+            """, (filename, filepath, transcription, user_id, user_email, datetime.now()))
             recording_id = cur.fetchone()[0]
             logger.info(f"✓ Recording ID: {recording_id}")
             return recording_id
