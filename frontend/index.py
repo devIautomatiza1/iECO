@@ -115,7 +115,18 @@ def update_recordings_map() -> None:
 # ============================================================================
 
 st.set_page_config(layout="wide", page_title=APP_NAME)
+# Barra superior con usuario y logout
+from auth import logout, is_admin
+from admin import render_admin_panel, is_superadmin
 
+user = st.session_state.get("user", {})
+col_user, col_logout = st.columns([8, 1])
+with col_user:
+    st.markdown(f'<p style="color:#94a3b8; font-size:13px; margin:0;">👤 {user.get("name", "")} · {user.get("company", "")}</p>', unsafe_allow_html=True)
+with col_logout:
+    if st.button("Salir", key="logout_btn"):
+        logout()
+        st.rerun()
 # Cargar estilos CSS desde archivo
 st.markdown(styles.get_styles(), unsafe_allow_html=True)
 
@@ -1209,6 +1220,11 @@ else:
 st.markdown("")
 st.markdown("")
 st.markdown("")
+
+# PANEL DE ADMINISTRACIÓN
+if is_superadmin():
+    with st.expander("⚙️ Administración de usuarios", expanded=False):
+        render_admin_panel()
 
 # SECCIÓN DEBUG
 with st.expander("🔧 DEBUG - Estado de base de datos"):
