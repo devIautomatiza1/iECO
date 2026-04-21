@@ -2,7 +2,8 @@
 import { useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Zap, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
+import Image from "next/image";
 import { register as apiRegister, setToken } from "@/lib/api";
 
 export default function RegisterPage() {
@@ -54,8 +55,8 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm space-y-8">
         {/* Logo */}
         <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-600/30">
-            <Zap className="w-6 h-6 text-white" />
+          <div className="w-16 h-16 rounded-2xl overflow-hidden shadow-lg">
+            <Image src="/logo.png" alt="iECO" width={64} height={64} className="w-full h-full object-contain" />
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>
