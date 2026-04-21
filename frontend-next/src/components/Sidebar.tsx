@@ -37,14 +37,14 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
       className={`relative flex flex-col h-screen border-r transition-all duration-300 shrink-0 ${
         collapsed ? "w-16" : "w-56"
       }`}
-      style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}
+      style={{ background: "var(--sidebar-bg)", borderColor: "var(--border-color)" }}
     >
       {/* Logo */}
       <div
         className="flex items-center gap-3 px-4 py-5 border-b"
         style={{ borderColor: "var(--border-color)" }}
       >
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center shrink-0 shadow-sm">
           <Zap className="w-4 h-4 text-white" />
         </div>
         {!collapsed && (
@@ -60,7 +60,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
             onClick={() => onTabChange(id)}
             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
               activeTab === id
-                ? "bg-violet-600/20 text-violet-600 dark:text-violet-300 border border-violet-600/30"
+                ? "bg-violet-600 text-white shadow-sm"
                 : "hover:bg-[var(--hover-bg)]"
             }`}
             style={activeTab !== id ? { color: "var(--text-b)" } : undefined}
