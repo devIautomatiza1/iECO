@@ -494,7 +494,7 @@ def get_transcription(recording_id: int, user=Depends(get_current_user)):
 def _run_transcription_job(recording_id: int, job_id: str, audio_path_str: str, mime: str) -> None:
     """Se ejecuta en un hilo separado para no bloquear el proxy."""
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
         audio_file = genai.upload_file(audio_path_str, mime_type=mime)
         prompt = """Transcribe esta conversación/reunión identificando CADA HABLANTE por separado.
 
@@ -573,7 +573,7 @@ async def generate_summary(recording_id: int, user=Depends(get_current_user)):
     if not row or not row[0]:
         raise HTTPException(400, "Primero transcribe el audio")
     transcription = row[0]
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash-lite")
     prompt = f"""Genera un resumen ejecutivo profesional de esta transcripción de reunión.
 
 TRANSCRIPCIÓN:
@@ -675,7 +675,7 @@ async def analyze_opportunities(recording_id: int, user=Depends(get_current_user
     if not row or not row[0]:
         raise HTTPException(400, "Primero transcribe el audio")
     transcription = row[0]
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.0-flash-lite")
     prompt = f"""Analiza esta transcripción de reunión de negocios y extrae TODAS las tareas, oportunidades y acciones pendientes.
 
 TRANSCRIPCIÓN:
@@ -808,7 +808,7 @@ async def chat(body: Dict = Body(...), user=Depends(get_current_user)):
         f"\nPregunta del usuario: {question}"
     )
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash-lite")
         response = model.generate_content("\n".join(prompt_parts))
         return {"response": response.text}
     except Exception as e:
