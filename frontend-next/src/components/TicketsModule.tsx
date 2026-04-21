@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { ChevronDown, ChevronUp, Circle, AlertCircle, CheckCircle2, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, Circle, AlertCircle, CheckCircle2, Clock, User, Calendar, Mic2, Zap } from "lucide-react";
 
 const MOCK_TICKETS = [
   {
@@ -45,125 +45,168 @@ const MOCK_TICKETS = [
   },
 ];
 
-const PRIORITY_STYLES: Record<string, string> = {
-  high: "text-red-400 bg-red-500/10 border-red-500/20",
-  medium: "text-amber-400 bg-amber-500/10 border-amber-500/20",
-  low: "text-slate-400 bg-slate-500/10 border-slate-500/20",
+const PRIORITY_CONFIG: Record<string, { label: string; cls: string; dot: string }> = {
+  high:   { label: "Alta",  cls: "text-red-600 dark:text-red-400 bg-red-500/10 border-red-500/25",     dot: "bg-red-500"   },
+  medium: { label: "Media", cls: "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/25", dot: "bg-amber-500" },
+  low:    { label: "Baja",  cls: "text-slate-500 bg-slate-500/10 border-slate-500/25",                  dot: "bg-slate-400" },
 };
-const PRIORITY_LABELS: Record<string, string> = { high: "Alta", medium: "Media", low: "Baja" };
 
-const STATUS_ICON: Record<string, React.ReactElement> = {
-  open: <Circle className="w-4 h-4 text-violet-400" />,
-  "in-progress": <Clock className="w-4 h-4 text-amber-400" />,
-  closed: <CheckCircle2 className="w-4 h-4 text-green-400" />,
-  blocked: <AlertCircle className="w-4 h-4 text-red-400" />,
+const LEFT_ACCENT: Record<string, string> = {
+  high: "border-l-red-500",
+  medium: "border-l-amber-500",
+  low: "border-l-slate-400",
 };
 
 export default function TicketsModule() {
-  const [open, setOpen] = useState<string[]>(["T-001"]);
+  const [openIds, setOpenIds] = useState<string[]>(["T-001"]);
   const [filter, setFilter] = useState("all");
 
   const toggle = (id: string) =>
-    setOpen((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+    setOpenIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
 
   const filtered = MOCK_TICKETS.filter(
     (t) => filter === "all" || t.status === filter
   );
 
+  const counts = {
+    all: MOCK_TICKETS.length,
+    open: MOCK_TICKETS.filter(t => t.status === "open").length,
+    closed: MOCK_TICKETS.filter(t => t.status === "closed").length,
+  };
+
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Tickets</h1>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Tickets</h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Oportunidades y acciones detectadas por IA</p>
         </div>
-        <div className="flex gap-2">
-          {["all", "open", "closed"].map((f) => (
+        <div className="flex items-center gap-1 p-1 rounded-xl border" style={{ background: "var(--surface)", borderColor: "var(--border-color)" }}>
+          {(["all", "open", "closed"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
                 filter === f
-                  ? "bg-violet-600/20 border-violet-500/30 text-violet-300"
-                  : "border-white/[0.06] text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
+                  ? "bg-violet-600 text-white shadow-sm"
+                  : "hover:bg-[var(--hover-bg)]"
               }`}
+              style={filter !== f ? { color: "var(--text-b)" } : undefined}
             >
               {f === "all" ? "Todos" : f === "open" ? "Abiertos" : "Cerrados"}
+              <span className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                filter === f ? "bg-white/20 text-white" : "bg-[var(--border-color)]"
+              }`} style={filter !== f ? { color: "var(--text-m)" } : undefined}>
+                {counts[f]}
+              </span>
             </button>
           ))}
         </div>
       </div>
 
+      {/* Ticket list */}
       <div className="space-y-2">
         {filtered.map((ticket) => {
-          const isOpen = open.includes(ticket.id);
+          const isExpanded = openIds.includes(ticket.id);
+          const prio = PRIORITY_CONFIG[ticket.priority];
+          const isClosed = ticket.status === "closed";
+
           return (
             <div
               key={ticket.id}
-              className={`rounded-xl border transition-all ${
-                ticket.status === "closed"
-                  ? "opacity-70"
-                  : ""
-              }`}
-            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}
+              className={`rounded-xl border-l-2 border overflow-hidden transition-all ${LEFT_ACCENT[ticket.priority]} ${isClosed ? "opacity-60" : ""}`}
+              style={{
+                background: "var(--card-bg)",
+                borderColor: "var(--border-color)",
+                boxShadow: isExpanded ? "var(--shadow-lift)" : "var(--shadow-card)",
+              }}
             >
+              {/* Row */}
               <button
                 onClick={() => toggle(ticket.id)}
-                className="w-full flex items-center gap-3 px-4 py-3.5 text-left"
+                className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-[var(--hover-bg)] transition-colors"
               >
-                {STATUS_ICON[ticket.status] ?? STATUS_ICON["open"]}
-                <span className={`text-xs font-mono text-slate-600 shrink-0`}>{ticket.id}</span>
+                {/* Status icon */}
+                <div className="shrink-0">
+                  {isClosed
+                    ? <CheckCircle2 className="w-4.5 h-4.5 text-emerald-500" />
+                    : <Circle className="w-4.5 h-4.5 text-violet-400" />
+                  }
+                </div>
+
+                {/* ID badge */}
                 <span
-                  className={`flex-1 text-sm font-medium ${
-                    ticket.status === "closed"
-                      ? "line-through"
-                      : ""
-                  }`}
-                  style={{ color: ticket.status === "closed" ? "var(--text-m)" : "var(--text-h)" }}
+                  className="text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-md shrink-0"
+                  style={{ background: "var(--surface)", color: "var(--text-m)" }}
+                >
+                  {ticket.id}
+                </span>
+
+                {/* Title */}
+                <span
+                  className={`flex-1 text-sm font-medium truncate ${isClosed ? "line-through" : ""}`}
+                  style={{ color: isClosed ? "var(--text-m)" : "var(--text-h)" }}
                 >
                   {ticket.title}
                 </span>
-                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PRIORITY_STYLES[ticket.priority]}`}>
-                  {PRIORITY_LABELS[ticket.priority]}
+
+                {/* Priority pill */}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shrink-0 flex items-center gap-1 ${prio.cls}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${prio.dot}`} />
+                  {prio.label}
                 </span>
-                {isOpen ? (
-                  <ChevronUp className="w-4 h-4 text-slate-600 shrink-0" />
-                ) : (
-                  <ChevronDown className="w-4 h-4 text-slate-600 shrink-0" />
-                )}
+
+                {/* Chevron */}
+                {isExpanded
+                  ? <ChevronUp className="w-4 h-4 shrink-0" style={{ color: "var(--text-m)" }} />
+                  : <ChevronDown className="w-4 h-4 shrink-0" style={{ color: "var(--text-m)" }} />
+                }
               </button>
 
-              {isOpen && (
-                  <div
-                    className="px-4 pb-4 pt-0 space-y-3 border-t"
-                    style={{ borderColor: "var(--border-color)" }}
-                  >
-                  <p className="text-sm leading-relaxed mt-3" style={{ color: "var(--text-b)" }}>{ticket.description}</p>
-                  <div className="flex flex-wrap gap-3 text-xs">
-                    <div className="flex items-center gap-1.5">
+              {/* Expanded body */}
+              {isExpanded && (
+                <div
+                  className="px-4 pb-4 space-y-4 border-t"
+                  style={{ borderColor: "var(--border-color)" }}
+                >
+                  <p className="text-sm leading-relaxed pt-3" style={{ color: "var(--text-b)" }}>
+                    {ticket.description}
+                  </p>
+
+                  {/* Meta chips */}
+                  <div className="flex flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border" style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-b)" }}>
+                      <User className="w-3 h-3 shrink-0" style={{ color: "var(--text-m)" }} />
                       <span style={{ color: "var(--text-m)" }}>Asignado a</span>
-                      <span className="font-medium" style={{ color: "var(--text-h)" }}>{ticket.assignee}</span>
+                      <span className="font-semibold" style={{ color: "var(--text-h)" }}>{ticket.assignee}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border" style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-b)" }}>
+                      <Calendar className="w-3 h-3 shrink-0" style={{ color: "var(--text-m)" }} />
                       <span style={{ color: "var(--text-m)" }}>Deadline</span>
-                      <span className="font-medium" style={{ color: "var(--text-h)" }}>{ticket.deadline}</span>
+                      <span className="font-semibold" style={{ color: "var(--text-h)" }}>{ticket.deadline}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span style={{ color: "var(--text-m)" }}>Origen</span>
-                      <span className="font-medium text-violet-500 dark:text-violet-400">{ticket.source}</span>
+                    <div className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-violet-500/20 bg-violet-500/8">
+                      <Mic2 className="w-3 h-3 text-violet-500 shrink-0" />
+                      <span className="text-violet-600 dark:text-violet-400">{ticket.source}</span>
                     </div>
                   </div>
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                      style={{ background: "var(--btn-bg)", borderColor: "var(--border-color)", color: "var(--text-b)" }}
-                    >
-                      Editar
-                    </button>
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-green-600/10 hover:bg-green-600/20 text-green-400 border border-green-500/20 transition-colors">
-                      Marcar completado
-                    </button>
-                  </div>
+
+                  {/* Actions */}
+                  {!isClosed && (
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        className="text-xs px-3 py-1.5 rounded-lg border font-medium transition-all hover:bg-[var(--hover-bg)]"
+                        style={{ borderColor: "var(--border-color)", color: "var(--text-b)" }}
+                      >
+                        Editar
+                      </button>
+                      <button className="text-xs px-3 py-1.5 rounded-lg font-medium bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25 transition-all flex items-center gap-1.5">
+                        <Zap className="w-3 h-3" />
+                        Marcar completado
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
