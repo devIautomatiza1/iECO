@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Mail, MessageCircle, Sparkles, Play, Pause, Volume2,
-  Bot, Loader2, FileText, Mic, Ticket, X, Share2
+  Bot, Loader2, FileText, Mic, Ticket, X, Share2, Copy, Check
 } from "lucide-react";
 import {
   getRecordings, getTranscription, transcribeRecording,
@@ -47,6 +47,7 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
   const [analyzeMsg, setAnalyzeMsg] = useState("");
   const [summaryError, setSummaryError] = useState("");
   const [audioURL, setAudioURL] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -150,6 +151,15 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
     window.open(`https://wa.me/?text=${encodeURIComponent(transcription)}`);
   };
 
+  const handleCopy = async () => {
+    if (!transcription) return;
+    try {
+      await navigator.clipboard.writeText(transcription);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard API no disponible */ }
+  };
+
   // Summary helpers
   const handleGenerateSummary = async () => {
     if (!recordingId) return;
@@ -221,6 +231,17 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
         <div className="flex gap-2 shrink-0 flex-wrap">
           {transcription && (
             <>
+              <button
+                onClick={handleCopy}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${
+                  copied
+                    ? "bg-emerald-600/10 border-emerald-500/25 text-emerald-500"
+                    : "bg-slate-500/10 border-slate-500/25 text-slate-500 hover:bg-slate-500/20"
+                }`}
+              >
+                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                {copied ? "Copiado" : "Copiar"}
+              </button>
               <button onClick={shareEmail} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600/10 border border-indigo-500/25 text-indigo-500 hover:bg-indigo-600/20 transition-all">
                 <Mail className="w-3.5 h-3.5" /> Email
               </button>
