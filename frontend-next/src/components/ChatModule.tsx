@@ -60,12 +60,13 @@ export default function ChatModule() {
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h1 className="text-2xl font-bold text-white">Asistente IA</h1>
-          <p className="text-slate-400 text-sm mt-1">Conversando sobre: 20260415_132659.m4a</p>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Asistente IA</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Conversando sobre: 20260415_132659.m4a</p>
         </div>
         <button
           onClick={() => setMessages(INITIAL_MESSAGES)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-white/[0.06] text-slate-500 hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
+          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+          style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
         >
           <RotateCcw className="w-3.5 h-3.5" /> Nueva conversación
         </button>
@@ -80,18 +81,21 @@ export default function ChatModule() {
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
             )}
-            <div className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
-              msg.role === "user"
-                ? "bg-violet-600 text-white rounded-br-sm"
-                : "bg-[#0e1421] border border-white/[0.06] text-slate-300 rounded-bl-sm"
-            }`}>
+            <div
+              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm leading-relaxed border ${
+                msg.role === "user"
+                  ? "bg-violet-600 text-white rounded-br-sm border-transparent"
+                  : "rounded-bl-sm"
+              }`}
+              style={msg.role !== "user" ? { background: "var(--card-bg)", borderColor: "var(--border-color)", color: "var(--text-b)" } : undefined}
+            >
               <p className="whitespace-pre-line">{msg.content}</p>
               <p className={`text-[10px] mt-1.5 ${msg.role === "user" ? "text-violet-200/60 text-right" : "text-slate-600"}`}>
                 {msg.time}
               </p>
             </div>
             {msg.role === "user" && (
-              <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center shrink-0 mt-0.5">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ background: "var(--surface)" }}>
                 <User className="w-4 h-4 text-slate-300" />
               </div>
             )}
@@ -102,7 +106,10 @@ export default function ChatModule() {
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
-            <div className="bg-[#0e1421] border border-white/[0.06] rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center">
+            <div
+              className="rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1.5 items-center border"
+              style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}
+            >
               {[0, 1, 2].map((i) => (
                 <span
                   key={i}
@@ -117,13 +124,14 @@ export default function ChatModule() {
       </div>
 
       {/* Input */}
-      <div className="flex gap-3 pt-3 border-t border-white/[0.06]">
+      <div className="flex gap-3 pt-3 border-t" style={{ borderColor: "var(--border-color)" }}>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
           placeholder="Escribe tu pregunta o solicitud de análisis…"
-          className="flex-1 bg-[#0e1421] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/50 transition-colors"
+          className="flex-1 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-violet-500/50 transition-colors border placeholder:text-[var(--text-m)]"
+          style={{ background: "var(--card-bg)", borderColor: "var(--border-med)", color: "var(--text-b)" }}
         />
         <button
           onClick={send}

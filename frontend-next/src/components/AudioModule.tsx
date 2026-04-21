@@ -34,16 +34,16 @@ export default function AudioModule() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Grabaciones</h1>
-        <p className="text-slate-400 text-sm mt-1">Graba en vivo o sube un archivo de audio para transcribir</p>
+        <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Grabaciones</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Graba en vivo o sube un archivo de audio para transcribir</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Grabadora en vivo */}
-        <div className="bg-[#0e1421] rounded-2xl border border-white/[0.06] p-6 flex flex-col items-center gap-5">
+        <div className="rounded-2xl border p-6 flex flex-col items-center gap-5" style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}>
           <div className="text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Grabadora en vivo</p>
-            <p className="text-slate-400 text-sm">Pulsa para comenzar a grabar desde el micrófono</p>
+            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-m)" }}>Grabadora en vivo</p>
+            <p className="text-sm" style={{ color: "var(--text-b)" }}>Pulsa para comenzar a grabar desde el micrófono</p>
           </div>
 
           {/* Botón grabación */}
@@ -79,15 +79,15 @@ export default function AudioModule() {
             ))}
           </div>
 
-          <div className="font-mono text-2xl font-bold text-slate-200">{fmt(timer)}</div>
-          <p className="text-xs text-slate-500">{isRecording ? "Grabando…" : "Listo para grabar"}</p>
+          <div className="font-mono text-2xl font-bold" style={{ color: "var(--text-h)" }}>{fmt(timer)}</div>
+          <p className="text-xs" style={{ color: "var(--text-m)" }}>{isRecording ? "Grabando…" : "Listo para grabar"}</p>
         </div>
 
         {/* Subir archivo */}
-        <div className="bg-[#0e1421] rounded-2xl border border-white/[0.06] p-6 flex flex-col gap-4">
+        <div className="rounded-2xl border p-6 flex flex-col gap-4" style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 mb-1">Subir archivo</p>
-            <p className="text-slate-400 text-sm">Arrastra un archivo o haz clic para seleccionarlo</p>
+            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-m)" }}>Subir archivo</p>
+            <p className="text-sm" style={{ color: "var(--text-b)" }}>Arrastra un archivo o haz clic para seleccionarlo</p>
           </div>
 
           <div
@@ -102,16 +102,16 @@ export default function AudioModule() {
             className={`flex-1 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-3 py-8 cursor-pointer transition-all ${
               dragOver
                 ? "border-violet-400 bg-violet-500/10"
-                : "border-white/10 hover:border-white/20 hover:bg-white/[0.02]"
+                : "border-[var(--upload-border)] hover:border-[var(--upload-border-hover)] hover:bg-[var(--hover-bg)]"
             }`}
           >
-            <CloudUpload className={`w-10 h-10 ${dragOver ? "text-violet-400" : "text-slate-600"}`} />
+            <CloudUpload className={`w-10 h-10 ${dragOver ? "text-violet-400" : ""}`} style={!dragOver ? { color: "var(--text-m)" } : undefined} />
             {selectedFile ? (
-              <p className="text-sm text-violet-300 font-medium">{selectedFile}</p>
+              <p className="text-sm text-violet-500 dark:text-violet-300 font-medium">{selectedFile}</p>
             ) : (
               <>
-                <p className="text-sm text-slate-400">Arrastra aquí tu archivo</p>
-                <p className="text-xs text-slate-600">MP3, WAV, M4A, OGG · Máx 500MB</p>
+                <p className="text-sm" style={{ color: "var(--text-b)" }}>Arrastra aquí tu archivo</p>
+                <p className="text-xs" style={{ color: "var(--text-m)" }}>MP3, WAV, M4A, OGG · Máx 500MB</p>
               </>
             )}
           </div>
@@ -126,7 +126,8 @@ export default function AudioModule() {
             <select
               value={selectedRecording}
               onChange={(e) => setSelectedRecording(e.target.value)}
-              className="w-full appearance-none bg-[#151d2e] border border-white/[0.08] rounded-lg px-4 py-2.5 text-sm text-slate-300 pr-8 focus:outline-none focus:border-violet-500"
+              className="w-full appearance-none rounded-lg px-4 py-2.5 text-sm pr-8 focus:outline-none focus:border-violet-500"
+              style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)", border: "1px solid var(--border-med)" }}
             >
               <option value="">— Seleccionar grabación existente —</option>
               {MOCK_RECORDINGS.map((r) => (

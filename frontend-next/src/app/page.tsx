@@ -22,9 +22,9 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0b0f1a]">
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--app-bg)" }}>
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto" style={{ color: "var(--text-b)" }}>
         <div className="max-w-4xl mx-auto px-6 py-8">
           {renderModule()}
         </div>

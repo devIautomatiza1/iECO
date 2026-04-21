@@ -74,8 +74,8 @@ export default function TicketsModule() {
     <div className="space-y-5">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Tickets</h1>
-          <p className="text-slate-400 text-sm mt-1">Oportunidades y acciones detectadas por IA</p>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Tickets</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Oportunidades y acciones detectadas por IA</p>
         </div>
         <div className="flex gap-2">
           {["all", "open", "closed"].map((f) => (
@@ -102,9 +102,10 @@ export default function TicketsModule() {
               key={ticket.id}
               className={`rounded-xl border transition-all ${
                 ticket.status === "closed"
-                  ? "border-white/[0.04] bg-[#0e1421]/50"
-                  : "border-white/[0.06] bg-[#0e1421]"
+                  ? "opacity-70"
+                  : ""
               }`}
+            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}
             >
               <button
                 onClick={() => toggle(ticket.id)}
@@ -112,7 +113,14 @@ export default function TicketsModule() {
               >
                 {STATUS_ICON[ticket.status] ?? STATUS_ICON["open"]}
                 <span className={`text-xs font-mono text-slate-600 shrink-0`}>{ticket.id}</span>
-                <span className={`flex-1 text-sm font-medium ${ticket.status === "closed" ? "text-slate-500 line-through" : "text-slate-200"}`}>
+                <span
+                  className={`flex-1 text-sm font-medium ${
+                    ticket.status === "closed"
+                      ? "line-through"
+                      : ""
+                  }`}
+                  style={{ color: ticket.status === "closed" ? "var(--text-m)" : "var(--text-h)" }}
+                >
                   {ticket.title}
                 </span>
                 <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PRIORITY_STYLES[ticket.priority]}`}>
@@ -126,24 +134,30 @@ export default function TicketsModule() {
               </button>
 
               {isOpen && (
-                <div className="px-4 pb-4 pt-0 space-y-3 border-t border-white/[0.04]">
-                  <p className="text-sm text-slate-400 leading-relaxed mt-3">{ticket.description}</p>
+                  <div
+                    className="px-4 pb-4 pt-0 space-y-3 border-t"
+                    style={{ borderColor: "var(--border-color)" }}
+                  >
+                  <p className="text-sm leading-relaxed mt-3" style={{ color: "var(--text-b)" }}>{ticket.description}</p>
                   <div className="flex flex-wrap gap-3 text-xs">
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <span className="text-slate-600">Asignado a</span>
-                      <span className="text-slate-300 font-medium">{ticket.assignee}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ color: "var(--text-m)" }}>Asignado a</span>
+                      <span className="font-medium" style={{ color: "var(--text-h)" }}>{ticket.assignee}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <span className="text-slate-600">Deadline</span>
-                      <span className="text-slate-300 font-medium">{ticket.deadline}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ color: "var(--text-m)" }}>Deadline</span>
+                      <span className="font-medium" style={{ color: "var(--text-h)" }}>{ticket.deadline}</span>
                     </div>
-                    <div className="flex items-center gap-1.5 text-slate-500">
-                      <span className="text-slate-600">Origen</span>
-                      <span className="text-violet-400/80 font-medium">{ticket.source}</span>
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ color: "var(--text-m)" }}>Origen</span>
+                      <span className="font-medium text-violet-500 dark:text-violet-400">{ticket.source}</span>
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <button className="text-xs px-3 py-1.5 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-slate-400 hover:text-slate-200 border border-white/[0.06] transition-colors">
+                    <button
+                      className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                      style={{ background: "var(--btn-bg)", borderColor: "var(--border-color)", color: "var(--text-b)" }}
+                    >
                       Editar
                     </button>
                     <button className="text-xs px-3 py-1.5 rounded-lg bg-green-600/10 hover:bg-green-600/20 text-green-400 border border-green-500/20 transition-colors">

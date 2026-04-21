@@ -29,8 +29,8 @@ export default function TranscriptionModule() {
     <div className="space-y-5">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Transcripción</h1>
-          <p className="text-slate-400 text-sm mt-1">20260415_132659.m4a · 18 min 42 seg · Español</p>
+          <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Transcripción</h1>
+          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>20260415_132659.m4a · 18 min 42 seg · Español</p>
         </div>
         <div className="flex gap-2">
           <button className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 transition-colors">
@@ -46,7 +46,7 @@ export default function TranscriptionModule() {
       </div>
 
       {/* Reproductor sticky */}
-      <div className="sticky top-4 z-10 bg-[#0e1421]/90 backdrop-blur-sm border border-white/[0.08] rounded-xl p-4 flex items-center gap-4">
+      <div className="sticky top-4 z-10 backdrop-blur-sm rounded-xl p-4 flex items-center gap-4 border" style={{ background: "var(--player-bg)", borderColor: "var(--border-med)" }}>
         <button
           onClick={() => setPlaying(!playing)}
           className="w-9 h-9 rounded-full bg-violet-600 hover:bg-violet-500 flex items-center justify-center transition-colors shrink-0"
@@ -54,7 +54,7 @@ export default function TranscriptionModule() {
           {playing ? <Pause className="w-4 h-4 text-white" /> : <Play className="w-4 h-4 text-white ml-0.5" />}
         </button>
         <div className="flex-1">
-          <div className="w-full bg-white/10 rounded-full h-1.5">
+          <div className="w-full rounded-full h-1.5" style={{ background: "var(--player-track)" }}>
             <div className="bg-violet-500 h-1.5 rounded-full" style={{ width: `${progress}%` }} />
           </div>
           <div className="flex justify-between text-xs text-slate-500 mt-1">
@@ -75,13 +75,16 @@ export default function TranscriptionModule() {
                 <div className={`w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold ${sp.color}`}>
                   {line.speaker}
                 </div>
-                <span className="text-[10px] text-slate-600 font-mono">{line.time}</span>
+                <span className="text-[10px] font-mono" style={{ color: "var(--text-m)" }}>{line.time}</span>
               </div>
-              <div className={`flex-1 rounded-xl px-4 py-3 text-sm leading-relaxed border transition-all ${
-                line.speaker === "C"
-                  ? "bg-amber-500/5 border-amber-500/20 text-amber-200/80 italic"
-                  : "bg-[#0e1421] border-white/[0.04] text-slate-300 group-hover:border-white/10"
-              }`}>
+              <div
+                className={`flex-1 rounded-xl px-4 py-3 text-sm leading-relaxed border transition-all ${
+                  line.speaker === "C"
+                    ? "bg-amber-500/5 border-amber-500/20 text-amber-700 dark:text-amber-200/80 italic"
+                    : "border group-hover:border-[var(--border-med)]"
+                }`}
+                style={line.speaker !== "C" ? { background: "var(--card-bg)", borderColor: "var(--border-color)", color: "var(--text-b)" } : undefined}
+              >
                 <div className={`text-[11px] font-semibold mb-1 ${sp.color.split(" ")[1]}`}>{sp.name}</div>
                 {line.text}
               </div>
