@@ -2,11 +2,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Mail, MessageCircle, Sparkles, Play, Pause, Volume2,
-  Bot, Loader2, FileText, Mic, Ticket
+  Bot, Loader2, FileText, Mic, Ticket, X, Share2
 } from "lucide-react";
 import {
   getRecordings, getTranscription, transcribeRecording,
-  fetchAudioObjectURL, analyzeOpportunities, Recording,
+  fetchAudioObjectURL, analyzeOpportunities, generateSummary, Recording,
 } from "@/lib/api";
 
 interface TranscriptionModuleProps {
@@ -40,8 +40,12 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
   const [transcription, setTranscription] = useState<string | null>(null);
   const [transcribing, setTranscribing] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [showSummary, setShowSummary] = useState(false);
   const [transcribeError, setTranscribeError] = useState("");
   const [analyzeMsg, setAnalyzeMsg] = useState("");
+  const [summaryError, setSummaryError] = useState("");
   const [audioURL, setAudioURL] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -139,6 +143,30 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
     window.open(`https://wa.me/?text=${encodeURIComponent(transcription)}`);
   };
 
+  // Summary helpers
+  const handleGenerateSummary = async () => {
+    if (!recordingId) return;
+    setGeneratingSummary(true);
+    setSummaryError("");
+    try {
+      const res = await generateSummary(recordingId);
+      setSummary(res.summary);
+      setShowSummary(true);
+    } catch (err: unknown) {
+      setSummaryError(err instanceof Error ? err.message : "Error al generar resumen");
+    } finally {
+      setGeneratingSummary(false);
+    }
+  };
+  const shareSummaryEmail = () => {
+    if (!summary) return;
+    window.open(`mailto:?subject=Resumen%20de%20reuni%C3%B3n&body=${encodeURIComponent(summary)}`);
+  };
+  const shareSummaryWhatsApp = () => {
+    if (!summary) return;
+    window.open(`https://wa.me/?text=${encodeURIComponent(summary)}`);
+  };
+
   const parsed = transcription ? parseTranscription(transcription) : [];
 
   if (!recordingId) {
@@ -192,6 +220,14 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
               <button onClick={shareWhatsApp} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-600/20 transition-all">
                 <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
               </button>
+              <button
+                onClick={handleGenerateSummary}
+                disabled={generatingSummary}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-sky-600/10 border border-sky-500/25 text-sky-500 hover:bg-sky-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+              >
+                {generatingSummary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                {generatingSummary ? "Generando…" : "Resumen IA"}
+              </button>
             </>
           )}
           <button
@@ -208,6 +244,12 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
       {analyzeMsg && (
         <div className={`text-xs px-3 py-2 rounded-lg border ${analyzeMsg.startsWith("✓") ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-600" : "bg-red-500/10 border-red-500/25 text-red-500"}`}>
           {analyzeMsg}
+        </div>
+      )}
+
+      {summaryError && (
+        <div className="text-xs px-3 py-2 rounded-lg border bg-red-500/10 border-red-500/25 text-red-500">
+          {summaryError}
         </div>
       )}
 
@@ -312,6 +354,47 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Summary Panel */}
+      {showSummary && summary && (
+        <div
+          className="rounded-2xl border p-5 space-y-4"
+          style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-sky-500" />
+              <span className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Resumen ejecutivo</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={shareSummaryEmail}
+                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-indigo-600/10 border border-indigo-500/25 text-indigo-500 hover:bg-indigo-600/20 transition-all"
+              >
+                <Mail className="w-3 h-3" /> Email
+              </button>
+              <button
+                onClick={shareSummaryWhatsApp}
+                className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-emerald-600/10 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-600/20 transition-all"
+              >
+                <Share2 className="w-3 h-3" /> WhatsApp
+              </button>
+              <button
+                onClick={() => setShowSummary(false)}
+                className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-red-500/10 text-red-500 transition-all"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+          <div
+            className="text-sm leading-relaxed whitespace-pre-wrap rounded-xl p-4 border"
+            style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-b)" }}
+          >
+            {summary}
+          </div>
         </div>
       )}
     </div>

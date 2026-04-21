@@ -9,6 +9,9 @@ import TranscriptionModule from "@/components/TranscriptionModule";
 import TicketsModule from "@/components/TicketsModule";
 import ChatModule from "@/components/ChatModule";
 import AdminModule from "@/components/AdminModule";
+import SettingsModule from "@/components/SettingsModule";
+
+const SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"];
 
 export default function Home() {
   const { user, loading } = useAuth();
@@ -27,6 +30,8 @@ export default function Home() {
       </div>
     );
   }
+
+  const isSuperAdmin = SUPERADMIN_EMAILS.includes(user.email);
 
   const handleSelectRecording = (id: number) => {
     setSelectedRecordingId(id);
@@ -66,11 +71,7 @@ export default function Home() {
       case "admin":
         return <AdminModule currentUserEmail={user.email} />;
       case "settings":
-        return (
-          <div className="flex items-center justify-center h-64 text-sm" style={{ color: "var(--text-m)" }}>
-            Ajustes próximamente
-          </div>
-        );
+        return <SettingsModule isSuperAdmin={isSuperAdmin} />;
       default:
         return (
           <DashboardModule

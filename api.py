@@ -499,6 +499,87 @@ REGLAS:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/recordings/{recording_id}/summary")
+async def generate_summary(recording_id: int, user=Depends(get_current_user)):
+    if not GEMINI_API_KEY:
+        raise HTTPException(500, "GEMINI_API_KEY no configurada")
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT transcription FROM recordings WHERE id=%s", (recording_id,))
+            row = cur.fetchone()
+    finally:
+        db.close()
+    if not row or not row[0]:
+        raise HTTPException(400, "Primero transcribe el audio")
+    transcription = row[0]
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    prompt = f"""Genera un resumen ejecutivo profesional de esta transcripción de reunión.
+
+TRANSCRIPCIÓN:
+{transcription}
+
+El resumen debe incluir:
+1. **Contexto y participantes**: De qué trata la reunión y quiénes participan
+2. **Puntos clave tratados**: Los temas más importantes discutidos
+3. **Decisiones tomadas**: Acuerdos o decisiones concretas alcanzadas
+4. **Próximos pasos**: Acciones pendientes y responsables si se mencionan
+5. **Conclusión**: Síntesis de los resultados de la reunión
+
+Redacta en español, con tono profesional y en formato claro. Usa negrita para los encabezados de cada sección."""
+    response = model.generate_content(prompt)
+    return {"summary": response.text}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KEYWORDS DICTIONARY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+KEYWORDS_FILE = Path(__file__).parent / "keywords_dict.json"
+
+
+@app.get("/api/keywords")
+def get_keywords(user=Depends(get_current_user)):
+    try:
+        with open(KEYWORDS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(404, "Archivo de keywords no encontrado")
+    except json.JSONDecodeError:
+        raise HTTPException(500, "Error al leer el archivo de keywords")
+
+
+@app.put("/api/keywords")
+def update_keywords(body: Dict = Body(...), user=Depends(get_current_user)):
+    if user["email"] not in SUPERADMIN_EMAILS:
+        raise HTTPException(403, "Solo superadmins pueden editar el diccionario")
+    if "temas_de_interes" not in body:
+        raise HTTPException(400, "El body debe contener 'temas_de_interes'")
+    # Validate structure
+    temas = body["temas_de_interes"]
+    if not isinstance(temas, dict):
+        raise HTTPException(400, "temas_de_interes debe ser un objeto")
+    for nombre, categoria in temas.items():
+        if not isinstance(categoria, dict):
+            raise HTTPException(400, f"Categoría '{nombre}' debe ser un objeto")
+        if "prioridad" not in categoria or "variantes" not in categoria:
+            raise HTTPException(400, f"Categoría '{nombre}' debe tener 'prioridad' y 'variantes'")
+        if categoria["prioridad"] not in ("high", "medium", "low"):
+            raise HTTPException(400, f"Prioridad de '{nombre}' debe ser high, medium o low")
+        if not isinstance(categoria["variantes"], list):
+            raise HTTPException(400, f"'variantes' de '{nombre}' debe ser una lista")
+    try:
+        with open(KEYWORDS_FILE, "w", encoding="utf-8") as f:
+            json.dump(body, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        raise HTTPException(500, f"Error al guardar: {str(e)}")
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # OPPORTUNITIES / TICKETS
 # ═══════════════════════════════════════════════════════════════════════════════
 

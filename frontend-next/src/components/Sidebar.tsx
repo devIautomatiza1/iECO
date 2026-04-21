@@ -3,9 +3,10 @@ import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import Image from "next/image";
 import {
   Mic, LayoutDashboard, FileText, Ticket,
-  MessageSquare, Settings, LogOut, ChevronLeft, ChevronRight, Zap,
+  MessageSquare, Settings, LogOut, ChevronLeft, ChevronRight,
   Sun, Moon, User, ShieldCheck
 } from "lucide-react";
 
@@ -57,8 +58,8 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         className="flex items-center gap-3 px-4 py-5 border-b"
         style={{ borderColor: "var(--border-color)" }}
       >
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-500 flex items-center justify-center shrink-0 shadow-sm">
-          <Zap className="w-4 h-4 text-white" />
+        <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0 shadow-sm">
+          <Image src="/logo.png" alt="iECO" width={32} height={32} className="w-full h-full object-contain" />
         </div>
         {!collapsed && (
           <span className="font-bold text-lg tracking-tight" style={{ color: "var(--text-h)" }}>iECO</span>
