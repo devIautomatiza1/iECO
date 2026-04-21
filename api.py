@@ -584,8 +584,14 @@ El resumen debe incluir:
 5. **Conclusión**: Síntesis de los resultados de la reunión
 
 Redacta en español, con tono profesional y en formato claro. Usa negrita para los encabezados de cada sección."""
-    response = model.generate_content(prompt)
-    return {"summary": response.text}
+    try:
+        response = model.generate_content(prompt)
+        return {"summary": response.text}
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
+        raise HTTPException(500, f"Error al generar resumen: {err_str}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -682,7 +688,13 @@ Responde ÚNICAMENTE con un JSON array (sin markdown, sin explicaciones):
     "deadline": "Fecha límite si se menciona, si no cadena vacía"
   }}
 ]"""
-    response = model.generate_content(prompt)
+    try:
+        response = model.generate_content(prompt)
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
+        raise HTTPException(500, f"Error al analizar con IA: {err_str}")
     raw = response.text.strip()
     # Extraer el array JSON incluso si hay texto extra
     json_match = re.search(r"\[.*\]", raw, re.DOTALL)
