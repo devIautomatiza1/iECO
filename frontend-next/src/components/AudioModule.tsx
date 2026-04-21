@@ -1,150 +1,364 @@
-"use client";
-import { useState, useRef } from "react";
-import { Mic, MicOff, Upload, CloudUpload, ChevronDown, Play } from "lucide-react";
+﻿"use client";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import {
+  Mic, MicOff, Upload, Trash2, FileAudio, RefreshCw,
+  ChevronRight, CheckCircle2, Clock, Edit2, Check, X
+} from "lucide-react";
+import {
+  getRecordings, uploadRecording, deleteRecording, renameRecording,
+  Recording,
+} from "@/lib/api";
 
-const MOCK_RECORDINGS = [
-  "20260415_132659.m4a",
-  "reunion_ventas_20260412.wav",
-  "call_cliente_premium_20260408.mp3",
-  "meeting_estrategia_q2.m4a",
-];
+interface AudioModuleProps {
+  onSelectRecording: (id: number) => void;
+  selectedRecordingId: number | null;
+  onNavigate: (tab: string) => void;
+}
 
-export default function AudioModule() {
+export default function AudioModule({ onSelectRecording, selectedRecordingId, onNavigate }: AudioModuleProps) {
+  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [loadingRecordings, setLoadingRecordings] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Recording live
   const [isRecording, setIsRecording] = useState(false);
-  const [timer, setTimer] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [selectedRecording, setSelectedRecording] = useState("");
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const toggleRecording = () => {
-    if (isRecording) {
-      setIsRecording(false);
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    } else {
-      setIsRecording(true);
-      setTimer(0);
-      intervalRef.current = setInterval(() => setTimer((t) => t + 1), 1000);
+  // Rename state
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadRecordings = useCallback(async () => {
+    setLoadingRecordings(true);
+    try {
+      const data = await getRecordings();
+      setRecordings(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingRecordings(false);
+    }
+  }, []);
+
+  useEffect(() => { loadRecordings(); }, [loadRecordings]);
+
+  // â”€â”€ Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleFile = async (file: File) => {
+    setUploadError("");
+    setUploading(true);
+    try {
+      await uploadRecording(file);
+      await loadRecordings();
+    } catch (err: unknown) {
+      setUploadError(err instanceof Error ? err.message : "Error al subir");
+    } finally {
+      setUploading(false);
     }
   };
 
-  const fmt = (s: number) =>
-    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFile(file);
+    e.target.value = "";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  };
+
+  // â”€â”€ Live recording â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const startRecording = async () => {
+    setRecordingError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
+      const mr = new MediaRecorder(stream, { mimeType });
+      chunksRef.current = [];
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(chunksRef.current, { type: mimeType });
+        const ext = mimeType.includes("webm") ? "webm" : "ogg";
+        const filename = `grabacion_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
+        const file = new File([blob], filename, { type: mimeType });
+        setUploading(true);
+        try {
+          await uploadRecording(file);
+          await loadRecordings();
+        } catch (err: unknown) {
+          setUploadError(err instanceof Error ? err.message : "Error al guardar grabaciÃ³n");
+        } finally {
+          setUploading(false);
+        }
+      };
+      mr.start(1000);
+      mediaRecorderRef.current = mr;
+      setIsRecording(true);
+      setRecordingSeconds(0);
+      timerRef.current = setInterval(() => setRecordingSeconds((s) => s + 1), 1000);
+    } catch {
+      setRecordingError("No se pudo acceder al micrÃ³fono. Verifica los permisos.");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  };
+
+  useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  const formatTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+
+  // â”€â”€ Delete â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleDelete = async (id: number) => {
+    if (!confirm("Â¿Eliminar esta grabaciÃ³n?")) return;
+    try {
+      await deleteRecording(id);
+      setRecordings((prev) => prev.filter((r) => r.id !== id));
+      if (selectedRecordingId === id) onSelectRecording(recordings.find((r) => r.id !== id)?.id ?? 0);
+    } catch { /* ignore */ }
+  };
+
+  // â”€â”€ Rename â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const startEdit = (r: Recording) => { setEditingId(r.id); setEditName(r.filename); };
+  const cancelEdit = () => { setEditingId(null); setEditName(""); };
+  const confirmEdit = async (id: number) => {
+    if (!editName.trim()) return;
+    try {
+      await renameRecording(id, editName.trim());
+      setRecordings((prev) => prev.map((r) => r.id === id ? { ...r, filename: editName.trim() } : r));
+      cancelEdit();
+    } catch { /* ignore */ }
+  };
+
+  // â”€â”€ Select + navigate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const handleSelectAndNavigate = (id: number, tab: string) => {
+    onSelectRecording(id);
+    onNavigate(tab);
+  };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: "var(--text-h)" }}>Grabaciones</h1>
-        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Graba en vivo o sube un archivo de audio para transcribir</p>
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Grabaciones</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Sube audios o graba directamente desde el navegador</p>
       </div>
 
+      {/* Top row: Recorder + Upload */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Grabadora en vivo */}
-        <div className="rounded-2xl border p-6 flex flex-col items-center gap-5" style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}>
-          <div className="text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-m)" }}>Grabadora en vivo</p>
-            <p className="text-sm" style={{ color: "var(--text-b)" }}>Pulsa para comenzar a grabar desde el micrófono</p>
+        {/* Live recorder */}
+        <div
+          className="rounded-2xl border p-5 space-y-4"
+          style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}
+        >
+          <div className="flex items-center gap-2">
+            <Mic className="w-4 h-4 text-violet-500" />
+            <span className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Grabadora en vivo</span>
           </div>
 
-          {/* Botón grabación */}
-          <button
-            onClick={toggleRecording}
-            className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all duration-300 ${
-              isRecording
-                ? "bg-red-500/20 border-2 border-red-500"
-                : "bg-violet-600/20 border-2 border-violet-500 hover:bg-violet-600/30"
-            }`}
-          >
-            {isRecording && (
-              <span className="absolute inset-0 rounded-full border-2 border-red-400 animate-ping opacity-40" />
-            )}
-            {isRecording ? (
-              <MicOff className="w-10 h-10 text-red-400" />
-            ) : (
-              <Mic className="w-10 h-10 text-violet-300" />
-            )}
-          </button>
+          {recordingError && (
+            <p className="text-xs text-red-500 bg-red-500/10 px-3 py-2 rounded-lg border border-red-500/25">{recordingError}</p>
+          )}
 
-          {/* Ondas simuladas */}
-          <div className="flex items-end gap-1 h-10">
-            {Array.from({ length: 20 }).map((_, i) => (
+          <div className="flex flex-col items-center gap-4 py-4">
+            {isRecording && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="text-sm font-mono font-bold text-red-500">{formatTime(recordingSeconds)}</span>
+              </div>
+            )}
+
+            {/* Waveform visual */}
+            <div className="flex items-center gap-0.5 h-8">
+              {Array.from({ length: 20 }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-1 rounded-full transition-all ${isRecording ? "bg-violet-500" : ""}`}
+                  style={{
+                    background: isRecording ? undefined : "var(--wave-inactive)",
+                    height: isRecording
+                      ? `${20 + Math.sin((Date.now() / 200 + i) * 0.8) * 12 + Math.random() * 8}px`
+                      : `${6 + Math.sin(i * 0.8) * 4}px`,
+                    animation: isRecording ? `none` : undefined,
+                  }}
+                />
+              ))}
+            </div>
+
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={uploading}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-md disabled:opacity-50 ${
+                isRecording
+                  ? "bg-red-500 hover:bg-red-400 shadow-red-500/30"
+                  : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/30"
+              }`}
+            >
+              {isRecording ? <MicOff className="w-6 h-6 text-white" /> : <Mic className="w-6 h-6 text-white" />}
+            </button>
+            <p className="text-xs" style={{ color: "var(--text-m)" }}>
+              {isRecording ? "Toca para detener y guardar" : "Toca para empezar a grabar"}
+            </p>
+          </div>
+        </div>
+
+        {/* Upload */}
+        <div
+          className={`rounded-2xl border-2 border-dashed p-5 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all ${
+            isDragging ? "border-violet-500 bg-violet-500/5" : ""
+          }`}
+          style={!isDragging ? { borderColor: "var(--upload-border)", background: "var(--card-bg)" } : undefined}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input ref={fileInputRef} type="file" accept=".mp3,.wav,.m4a,.ogg,.flac,.webm" className="hidden" onChange={handleFileInput} />
+          <div className="w-10 h-10 rounded-xl bg-violet-600/10 flex items-center justify-center">
+            <Upload className="w-5 h-5 text-violet-500" />
+          </div>
+          {uploading ? (
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+              <span className="text-sm" style={{ color: "var(--text-m)" }}>Subiendoâ€¦</span>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-center" style={{ color: "var(--text-b)" }}>
+                Arrastra tu audio aquÃ­<br />
+                <span style={{ color: "var(--text-m)" }}>o haz clic para seleccionar</span>
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-m)" }}>MP3, WAV, M4A, OGG, FLAC, WEBM</p>
+            </>
+          )}
+          {uploadError && <p className="text-xs text-red-500 text-center">{uploadError}</p>}
+        </div>
+      </div>
+
+      {/* Recordings list */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>
+            Audios guardados <span className="font-normal" style={{ color: "var(--text-m)" }}>({recordings.length})</span>
+          </h2>
+          <button
+            onClick={loadRecordings}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all hover:bg-[var(--hover-bg)]"
+            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
+          >
+            <RefreshCw className="w-3 h-3" /> Actualizar
+          </button>
+        </div>
+
+        {loadingRecordings ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-5 h-5 border-2 border-violet-600 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : recordings.length === 0 ? (
+          <div
+            className="rounded-2xl border border-dashed flex flex-col items-center justify-center py-12 gap-2"
+            style={{ borderColor: "var(--border-color)" }}
+          >
+            <FileAudio className="w-8 h-8" style={{ color: "var(--text-m)" }} />
+            <p className="text-sm" style={{ color: "var(--text-m)" }}>No hay grabaciones aÃºn</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {recordings.map((r) => (
               <div
-                key={i}
-                className={`w-1 rounded-full transition-all duration-150 ${isRecording ? "bg-violet-400" : "bg-slate-700"}`}
-                style={{
-                  height: isRecording ? `${Math.random() * 32 + 8}px` : "8px",
-                  animationDelay: `${i * 50}ms`,
-                }}
-              />
+                key={r.id}
+                className={`rounded-xl border flex items-center gap-3 px-4 py-3 transition-all ${
+                  selectedRecordingId === r.id ? "border-violet-500/50 bg-violet-500/5" : ""
+                }`}
+                style={selectedRecordingId !== r.id
+                  ? { background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }
+                  : { boxShadow: "var(--shadow-card)" }}
+              >
+                <FileAudio className="w-4 h-4 shrink-0 text-violet-400" />
+
+                {editingId === r.id ? (
+                  <div className="flex-1 flex items-center gap-2">
+                    <input
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") confirmEdit(r.id); if (e.key === "Escape") cancelEdit(); }}
+                      className="flex-1 text-sm px-2 py-1 rounded-lg border focus:outline-none focus:border-violet-500/50"
+                      style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)" }}
+                      autoFocus
+                    />
+                    <button onClick={() => confirmEdit(r.id)} className="text-emerald-500 hover:text-emerald-400"><Check className="w-4 h-4" /></button>
+                    <button onClick={cancelEdit} className="text-red-500 hover:text-red-400"><X className="w-4 h-4" /></button>
+                  </div>
+                ) : (
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate" style={{ color: "var(--text-h)" }}>{r.filename}</p>
+                    <p className="text-[11px]" style={{ color: "var(--text-m)" }}>
+                      {new Date(r.created_at).toLocaleDateString("es", { day: "2-digit", month: "short", year: "numeric" })}
+                    </p>
+                  </div>
+                )}
+
+                {/* Badge transcrito */}
+                {r.transcribed && editingId !== r.id && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 border border-emerald-500/25 flex items-center gap-1 shrink-0">
+                    <CheckCircle2 className="w-3 h-3" /> Transcrito
+                  </span>
+                )}
+                {!r.transcribed && editingId !== r.id && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 border border-amber-500/25 flex items-center gap-1 shrink-0">
+                    <Clock className="w-3 h-3" /> Pendiente
+                  </span>
+                )}
+
+                {/* Actions */}
+                {editingId !== r.id && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleSelectAndNavigate(r.id, "transcriptions")}
+                      title="Transcribir"
+                      className="p-1.5 rounded-lg hover:bg-violet-500/10 hover:text-violet-500 transition-colors"
+                      style={{ color: "var(--text-m)" }}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => startEdit(r)}
+                      title="Renombrar"
+                      className="p-1.5 rounded-lg hover:bg-[var(--hover-bg)] transition-colors"
+                      style={{ color: "var(--text-m)" }}
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(r.id)}
+                      title="Eliminar"
+                      className="p-1.5 rounded-lg hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                      style={{ color: "var(--text-m)" }}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
-
-          <div className="font-mono text-2xl font-bold" style={{ color: "var(--text-h)" }}>{fmt(timer)}</div>
-          <p className="text-xs" style={{ color: "var(--text-m)" }}>{isRecording ? "Grabando…" : "Listo para grabar"}</p>
-        </div>
-
-        {/* Subir archivo */}
-        <div className="rounded-2xl border p-6 flex flex-col gap-4" style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: "var(--text-m)" }}>Subir archivo</p>
-            <p className="text-sm" style={{ color: "var(--text-b)" }}>Arrastra un archivo o haz clic para seleccionarlo</p>
-          </div>
-
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragOver(false);
-              const file = e.dataTransfer.files[0];
-              if (file) setSelectedFile(file.name);
-            }}
-            className={`flex-1 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-3 py-8 cursor-pointer transition-all ${
-              dragOver
-                ? "border-violet-400 bg-violet-500/10"
-                : "border-[var(--upload-border)] hover:border-[var(--upload-border-hover)] hover:bg-[var(--hover-bg)]"
-            }`}
-          >
-            <CloudUpload className={`w-10 h-10 ${dragOver ? "text-violet-400" : ""}`} style={!dragOver ? { color: "var(--text-m)" } : undefined} />
-            {selectedFile ? (
-              <p className="text-sm text-violet-500 dark:text-violet-300 font-medium">{selectedFile}</p>
-            ) : (
-              <>
-                <p className="text-sm" style={{ color: "var(--text-b)" }}>Arrastra aquí tu archivo</p>
-                <p className="text-xs" style={{ color: "var(--text-m)" }}>MP3, WAV, M4A, OGG · Máx 500MB</p>
-              </>
-            )}
-          </div>
-
-          <button className="w-full flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 text-white font-semibold py-2.5 rounded-lg transition-colors text-sm">
-            <Upload className="w-4 h-4" />
-            Seleccionar archivo
-          </button>
-
-          {/* Selector de grabación existente */}
-          <div className="relative">
-            <select
-              value={selectedRecording}
-              onChange={(e) => setSelectedRecording(e.target.value)}
-              className="w-full appearance-none rounded-lg px-4 py-2.5 text-sm pr-8 focus:outline-none focus:border-violet-500"
-              style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)", border: "1px solid var(--border-med)" }}
-            >
-              <option value="">— Seleccionar grabación existente —</option>
-              {MOCK_RECORDINGS.map((r) => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-slate-500 pointer-events-none" />
-          </div>
-
-          {selectedRecording && (
-            <button className="flex items-center justify-center gap-2 bg-indigo-600/20 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-600/30 font-medium py-2.5 rounded-lg transition-colors text-sm">
-              <Play className="w-4 h-4" />
-              Analizar {selectedRecording}
-            </button>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );
 }
+

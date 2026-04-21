@@ -1,13 +1,17 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/auth-context";
 import {
   Mic, LayoutDashboard, FileText, Ticket,
   MessageSquare, Settings, LogOut, ChevronLeft, ChevronRight, Zap,
-  Sun, Moon
+  Sun, Moon, User, ShieldCheck
 } from "lucide-react";
 
-const navItems = [
+const SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"];
+
+const baseNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
   { icon: Mic, label: "Grabaciones", id: "audio" },
   { icon: FileText, label: "Transcripciones", id: "transcriptions" },
@@ -15,8 +19,6 @@ const navItems = [
   { icon: MessageSquare, label: "Asistente IA", id: "chat" },
   { icon: Settings, label: "Ajustes", id: "settings" },
 ];
-
-
 
 interface SidebarProps {
   activeTab: string;
@@ -27,10 +29,21 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { user, logout } = useAuth();
+  const router = useRouter();
 
   useEffect(() => setMounted(true), []);
 
   const isDark = theme === "dark";
+  const isSuperAdmin = user && SUPERADMIN_EMAILS.includes(user.email);
+  const navItems = isSuperAdmin
+    ? [...baseNavItems, { icon: ShieldCheck, label: "Admin", id: "admin" }]
+    : baseNavItems;
+
+  const handleLogout = () => {
+    logout();
+    router.replace("/login");
+  };
 
   return (
     <aside
@@ -76,6 +89,19 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         className="px-2 pb-3 border-t pt-3 space-y-1"
         style={{ borderColor: "var(--border-color)" }}
       >
+        {/* Usuario */}
+        {user && !collapsed && (
+          <div className="flex items-center gap-2 px-3 py-2 mb-1">
+            <div className="w-6 h-6 rounded-full bg-violet-600/20 border border-violet-500/30 flex items-center justify-center shrink-0">
+              <User className="w-3 h-3 text-violet-500" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-medium truncate" style={{ color: "var(--text-h)" }}>{user.name || user.email}</p>
+              {user.company && <p className="text-[10px] truncate" style={{ color: "var(--text-m)" }}>{user.company}</p>}
+            </div>
+          </div>
+        )}
+
         {/* Toggle de tema */}
         {mounted && (
           <button
@@ -90,6 +116,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         )}
 
         <button
+          onClick={handleLogout}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:text-red-500 hover:bg-red-500/10 transition-all"
           style={{ color: "var(--text-m)" }}
         >
@@ -113,3 +140,4 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
     </aside>
   );
 }
+

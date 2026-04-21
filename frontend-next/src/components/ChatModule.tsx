@@ -1,63 +1,60 @@
 "use client";
-import { useState, useRef } from "react";
-import { Send, Sparkles, User, RotateCcw, FileAudio } from "lucide-react";
-
-interface Message {
-  role: "assistant" | "user";
-  content: string;
-  time: string;
-}
-
-const INITIAL_MESSAGES: Message[] = [
-  {
-    role: "assistant",
-    content: "Hola, soy tu asistente de análisis. Estoy aquí para ayudarte a entender tu reunión y extraer información relevante. Cuéntame qué te gustaría analizar.",
-    time: new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }),
-  },
-];
-
-const MOCK_RESPONSES: Record<string, string> = {
-  default: "He analizado la transcripción. Detecté 3 tareas asignadas, 2 decisiones estratégicas y 1 oportunidad de venta por valor de 240.000€. ¿Quieres que profundice en algún aspecto concreto?",
-  resumen: "Resumen ejecutivo:\n\n• ✅ KPIs Q1: +18% sobre objetivo\n• 🎯 3 oportunidades en pipeline avanzado (240K€)\n• 📋 Demo técnica para cliente premium (deadline viernes)\n• 📊 Propuesta LinkedIn Ads enterprise para jueves\n• 📄 Informe pipeline Q2 para el lunes",
-  tarea: "Las tareas detectadas son:\n1. Miguel R. → Demo técnica cliente premium (viernes)\n2. Carlos L. → Propuesta ROI LinkedIn Ads (jueves)\n3. Carlos L. → Informe pipeline Q2 (lunes)",
-};
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Send, Sparkles, User, RotateCcw, FileAudio, Mic } from "lucide-react";
+import { sendChatMessage, getRecordings, ChatMessage, Recording } from "@/lib/api";
 
 const QUICK_PROMPTS = ["Resumen ejecutivo", "Tareas asignadas", "Oportunidades de venta", "Próximos pasos"];
 
-const getResponse = (msg: string): string => {
-  const lower = msg.toLowerCase();
-  if (lower.includes("resumen")) return MOCK_RESPONSES.resumen;
-  if (lower.includes("tarea") || lower.includes("asign")) return MOCK_RESPONSES.tarea;
-  return MOCK_RESPONSES.default;
-};
+const makeTime = () => new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 
-export default function ChatModule() {
-  const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
+interface ChatModuleProps {
+  recordingId: number | null;
+  onSelectRecording?: (id: number) => void;
+}
+
+export default function ChatModule({ recordingId, onSelectRecording }: ChatModuleProps) {
+  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { role: "assistant", content: "Hola, soy tu asistente de análisis. Estoy aquí para ayudarte a entender tu reunión y extraer información relevante. Selecciona una grabación y cuéntame qué quieres analizar.", time: makeTime() },
+  ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => { getRecordings().then(setRecordings).catch(() => {}); }, []);
+
+  const scrollBottom = useCallback(() => {
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  }, []);
+
   const send = async (text?: string) => {
     const content = (text ?? input).trim();
     if (!content || loading) return;
-    const userMsg: Message = {
-      role: "user",
-      content,
-      time: new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, userMsg]);
+
+    const userMsg: ChatMessage = { role: "user", content, time: makeTime() };
+    const newMessages = [...messages, userMsg];
+    setMessages(newMessages);
     setInput("");
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    const aiMsg: Message = {
-      role: "assistant",
-      content: getResponse(content),
-      time: new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, aiMsg]);
-    setLoading(false);
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    scrollBottom();
+
+    try {
+      // Pass last 8 messages as history (excluding the new one)
+      const history = newMessages.slice(-9, -1);
+      const res = await sendChatMessage(content, recordingId ?? undefined, history);
+      setMessages((prev) => [...prev, { role: "assistant", content: res.response, time: makeTime() }]);
+    } catch (err: unknown) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Error: ${err instanceof Error ? err.message : "No se pudo conectar con el asistente"}`, time: makeTime() },
+      ]);
+    } finally {
+      setLoading(false);
+      scrollBottom();
+    }
   };
+
+  const activeRecording = recordings.find((r) => r.id === recordingId);
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -66,19 +63,39 @@ export default function ChatModule() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Asistente IA</h1>
           <div className="flex items-center gap-1.5 mt-1">
-            <span className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md border" style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-m)" }}>
-              <FileAudio className="w-3 h-3" />
-              20260415_132659.m4a
-            </span>
+            {activeRecording ? (
+              <span className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md border" style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+                <FileAudio className="w-3 h-3" />
+                {activeRecording.filename}
+              </span>
+            ) : (
+              <span className="text-xs" style={{ color: "var(--text-m)" }}>Sin grabación seleccionada</span>
+            )}
           </div>
         </div>
-        <button
-          onClick={() => setMessages(INITIAL_MESSAGES)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium transition-all hover:bg-[var(--hover-bg)]"
-          style={{ borderColor: "var(--border-color)", color: "var(--text-m)", background: "var(--surface)" }}
-        >
-          <RotateCcw className="w-3 h-3" /> Nueva conversación
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Recording selector */}
+          {recordings.length > 0 && (
+            <select
+              value={recordingId ?? ""}
+              onChange={(e) => { if (e.target.value) onSelectRecording?.(Number(e.target.value)); }}
+              className="text-xs px-2 py-1.5 rounded-xl border focus:outline-none focus:border-violet-500/50 transition-colors"
+              style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-b)" }}
+            >
+              <option value="">Seleccionar grabación…</option>
+              {recordings.map((r) => (
+                <option key={r.id} value={r.id}>{r.filename}</option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => setMessages([{ role: "assistant", content: "Nueva conversación iniciada. ¿En qué puedo ayudarte?", time: makeTime() }])}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium transition-all hover:bg-[var(--hover-bg)]"
+            style={{ borderColor: "var(--border-color)", color: "var(--text-m)", background: "var(--surface)" }}
+          >
+            <RotateCcw className="w-3 h-3" /> Nueva
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -157,7 +174,7 @@ export default function ChatModule() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
-          placeholder="Escribe tu pregunta o solicitud de análisis…"
+          placeholder={recordingId ? "Escribe tu pregunta sobre esta grabación…" : "Escribe tu pregunta (sin grabación seleccionada)…"}
           className="flex-1 bg-transparent px-3 py-2 text-sm focus:outline-none placeholder:text-[var(--text-m)]"
           style={{ color: "var(--text-b)" }}
         />
@@ -172,3 +189,13 @@ export default function ChatModule() {
     </div>
   );
 }
+
+
+interface Message {
+  role: "assistant" | "user";
+  content: string;
+  time: string;
+}
+
+
+
