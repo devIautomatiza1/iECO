@@ -39,13 +39,26 @@ if GEMINI_API_KEY:
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="iECO API", version="1.0.0")
 
+_allowed_origins = list(filter(None, [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    FRONTEND_URL if FRONTEND_URL else None,
+]))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", FRONTEND_URL],
+    allow_origins=_allowed_origins,
+    allow_origin_regex=r"https?://.*\.iautomatiza\.net",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Health check ────────────────────────────────────────────────────────────
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "iECO API"}
+
 
 # ─── DB ───────────────────────────────────────────────────────────────────────
 def get_db() -> psycopg2.extensions.connection:
