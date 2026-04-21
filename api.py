@@ -13,9 +13,9 @@ import google.generativeai as genai
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from jose import JWTError, jwt
 
 load_dotenv()
@@ -58,6 +58,22 @@ app.add_middleware(
 # ─── Job store (en memoria) ─────────────────────────────────────────────────
 _transcription_jobs: Dict[str, Dict[str, Any]] = {}
 _executor = ThreadPoolExecutor(max_workers=4)
+
+
+# ─── Global exception handler (garantiza CORS en errores 500) ───────────────
+@app.exception_handler(Exception)
+async def _unhandled_exc_handler(request: Request, exc: Exception):
+    origin = request.headers.get("origin", "")
+    headers = {}
+    import re as _re
+    if origin and _re.match(r"https?://.*\.iautomatiza\.net", origin):
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers=headers,
+    )
 
 
 # ─── Health check ────────────────────────────────────────────────────────────
@@ -776,6 +792,12 @@ async def chat(body: Dict = Body(...), user=Depends(get_current_user)):
         "Si la información solicitada no está en la transcripción, indícalo claramente.\n"
         f"\nPregunta del usuario: {question}"
     )
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    response = model.generate_content("\n".join(prompt_parts))
-    return {"response": response.text}
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        response = model.generate_content("\n".join(prompt_parts))
+        return {"response": response.text}
+    except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
+            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
+        raise HTTPException(500, f"Error al generar respuesta: {err_str}")
