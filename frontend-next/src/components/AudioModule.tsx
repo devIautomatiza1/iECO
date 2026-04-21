@@ -57,8 +57,14 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
   useEffect(() => { loadRecordings(); }, [loadRecordings]);
 
   // â”€â”€ Upload â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
+
   const handleFile = async (file: File) => {
     setUploadError("");
+    if (file.size > MAX_FILE_SIZE) {
+      setUploadError("El archivo supera el límite de 500 MB");
+      return;
+    }
     setUploading(true);
     try {
       await uploadRecording(file);

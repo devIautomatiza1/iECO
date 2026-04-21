@@ -394,6 +394,9 @@ async def upload_recording(file: UploadFile = File(...), user=Depends(get_curren
     content = await file.read()
     if not content:
         raise HTTPException(400, "Archivo vacío")
+    MAX_SIZE = 500 * 1024 * 1024  # 500 MB
+    if len(content) > MAX_SIZE:
+        raise HTTPException(413, "El archivo supera el límite de 500 MB")
     md5 = hashlib.md5(content).hexdigest()[:8]
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"recording_{ts}_{md5}.{ext}"
