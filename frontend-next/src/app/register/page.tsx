@@ -41,9 +41,11 @@ export default function RegisterPage() {
 
   const focusTeal = (e: React.FocusEvent<HTMLInputElement>) => {
     e.currentTarget.style.borderColor = "#0abde3";
+    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(10,189,227,0.12)";
   };
   const blurReset = (e: React.FocusEvent<HTMLInputElement>) => {
     e.currentTarget.style.borderColor = "var(--border-med)";
+    e.currentTarget.style.boxShadow = "none";
   };
 
   return (
@@ -51,20 +53,26 @@ export default function RegisterPage() {
       className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden"
       style={{ background: "var(--app-bg)" }}
     >
-      {/* Decorative blobs */}
+      {/* Decorative blobs animados */}
       <div
-        className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-[0.07] blur-3xl pointer-events-none"
+        className="absolute -top-32 -right-32 w-[500px] h-[500px] rounded-full opacity-[0.08] blur-3xl pointer-events-none animate-pulse"
         style={{ background: "radial-gradient(circle, #0abde3, transparent)" }}
       />
       <div
-        className="absolute -bottom-32 -left-32 w-96 h-96 rounded-full opacity-[0.07] blur-3xl pointer-events-none"
-        style={{ background: "radial-gradient(circle, #7c3aed, transparent)" }}
+        className="absolute -bottom-32 -left-32 w-[500px] h-[500px] rounded-full opacity-[0.08] blur-3xl pointer-events-none animate-pulse"
+        style={{ background: "radial-gradient(circle, #7c3aed, transparent)", animationDelay: "1s" }}
       />
 
-      <div className="w-full max-w-[400px] relative z-10">
+      <div
+        className="w-full max-w-[400px] relative z-10"
+        style={{ animation: "loginFadeUp 0.5s cubic-bezier(0.16,1,0.3,1) both" }}
+      >
         {/* Logo + brand */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-20 h-20 mb-5 drop-shadow-xl">
+        <div className="flex flex-col items-center mb-8" style={{ animation: "loginFadeUp 0.5s 0.05s cubic-bezier(0.16,1,0.3,1) both" }}>
+          <div
+            className="w-20 h-20 mb-5 drop-shadow-xl transition-transform duration-300 hover:scale-110 cursor-default"
+            style={{ animation: "logoBounce 0.6s 0.1s cubic-bezier(0.34,1.56,0.64,1) both" }}
+          >
             <Image src="/logo.png" alt="iECO" width={80} height={80} className="w-full h-full object-contain" priority />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight" style={{ color: "var(--text-h)" }}>
@@ -81,7 +89,8 @@ export default function RegisterPage() {
           style={{
             background: "var(--card-bg)",
             borderColor: "var(--border-color)",
-            boxShadow: "0 20px 60px -10px rgba(0,0,0,0.12), 0 4px 20px -4px rgba(0,0,0,0.08)",
+            boxShadow: "0 20px 60px -10px rgba(0,0,0,0.15), 0 4px 20px -4px rgba(0,0,0,0.10)",
+            animation: "loginFadeUp 0.5s 0.1s cubic-bezier(0.16,1,0.3,1) both",
           }}
         >
           <div>
@@ -94,7 +103,10 @@ export default function RegisterPage() {
           </div>
 
           {error && (
-            <div className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500">
+            <div
+              className="flex items-center gap-2 text-xs px-3 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500"
+              style={{ animation: "loginFadeUp 0.3s cubic-bezier(0.16,1,0.3,1) both" }}
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
               {error}
             </div>
@@ -171,7 +183,7 @@ export default function RegisterPage() {
                 <button
                   type="button"
                   onClick={() => setShowPwd(!showPwd)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-all duration-200 hover:scale-110 hover:opacity-100 opacity-60 rounded-lg p-0.5"
                   style={{ color: "var(--text-m)" }}
                 >
                   {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -182,10 +194,10 @@ export default function RegisterPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 mt-1 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 mt-1 rounded-xl text-white text-sm font-bold flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.02] hover:brightness-110 active:scale-[0.98]"
               style={{
                 background: loading ? "#0abde3cc" : "linear-gradient(135deg, #0abde3 0%, #0097b2 100%)",
-                boxShadow: "0 4px 15px rgba(10,189,227,0.35)",
+                boxShadow: loading ? "none" : "0 4px 20px rgba(10,189,227,0.4)",
               }}
             >
               {loading ? (
@@ -201,7 +213,7 @@ export default function RegisterPage() {
               ¿Ya tienes cuenta?{" "}
               <Link
                 href="/login"
-                className="font-semibold transition-colors"
+                className="font-semibold transition-all duration-200 hover:underline hover:brightness-125"
                 style={{ color: "#0abde3" }}
               >
                 Inicia sesión
@@ -210,9 +222,23 @@ export default function RegisterPage() {
           </div>
         </div>
 
-        <p className="text-center text-xs mt-6" style={{ color: "var(--text-m)" }}>
+        <p
+          className="text-center text-xs mt-6"
+          style={{ color: "var(--text-m)", animation: "loginFadeUp 0.5s 0.35s cubic-bezier(0.16,1,0.3,1) both" }}
+        >
           © {new Date().getFullYear()} iECO · Todos los derechos reservados
         </p>
+
+        <style>{`
+          @keyframes loginFadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to   { opacity: 1; transform: translateY(0); }
+          }
+          @keyframes logoBounce {
+            from { opacity: 0; transform: scale(0.5); }
+            to   { opacity: 1; transform: scale(1); }
+          }
+        `}</style>
       </div>
     </div>
   );
