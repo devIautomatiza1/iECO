@@ -304,7 +304,7 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
           <FileText className="w-10 h-10" style={{ color: "var(--text-m)" }} />
           <div className="text-center">
             <p className="text-sm font-medium" style={{ color: "var(--text-h)" }}>Sin transcripción</p>
-            <p className="text-xs mt-1" style={{ color: "var(--text-m)" }}>Haz clic para procesar el audio con IA (puede tardar 30-60 seg)</p>
+            <p className="text-xs mt-1" style={{ color: "var(--text-m)" }}>Haz clic para procesar el audio con IA (archivos largos pueden tardar varios minutos)</p>
           </div>
           {transcribeError && <p className="text-xs text-red-500">{transcribeError}</p>}
           <button
@@ -313,8 +313,13 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-semibold transition-all shadow-sm shadow-violet-600/30"
           >
             {transcribing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {transcribing ? "Transcribiendo…" : "Transcribir con IA"}
+            {transcribing ? "Procesando en servidor…" : "Transcribir con IA"}
           </button>
+          {transcribing && (
+            <p className="text-xs" style={{ color: "var(--text-m)" }}>
+              Enviando audio a Gemini AI… no cierres esta pestaña
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-2">

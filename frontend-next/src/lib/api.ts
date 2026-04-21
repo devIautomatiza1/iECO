@@ -137,10 +137,23 @@ export const renameRecording = (id: number, filename: string) =>
 export const getTranscription = (recordingId: number) =>
   request<{ transcription: string }>(`/api/recordings/${recordingId}/transcription`);
 
-export const transcribeRecording = (recordingId: number) =>
-  request<{ transcription: string }>(`/api/recordings/${recordingId}/transcribe`, {
-    method: "POST",
-  });
+export async function transcribeRecording(recordingId: number): Promise<{ transcription: string }> {
+  // Inicia el job en background (devuelve inmediatamente sin timeout de proxy)
+  const { job_id } = await request<{ job_id: string; status: string }>(
+    `/api/recordings/${recordingId}/transcribe`,
+    { method: "POST" },
+  );
+  // Polling cada 5s hasta 10 minutos
+  for (let i = 0; i < 120; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const job = await request<{ status: string; transcription?: string; error?: string }>(
+      `/api/transcription-jobs/${job_id}`,
+    );
+    if (job.status === "completed" && job.transcription) return { transcription: job.transcription };
+    if (job.status === "error") throw new Error(job.error ?? "Error al transcribir");
+  }
+  throw new Error("Tiempo agotado. El archivo es muy largo, intenta de nuevo.");
+}
 
 // ─── Opportunities / Tickets ──────────────────────────────────────────────────
 export const getOpportunities = (recordingId: number) =>

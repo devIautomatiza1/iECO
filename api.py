@@ -2,7 +2,8 @@
 Arrancar con: uvicorn api:app --reload --port 8000
 """
 from __future__ import annotations
-import hashlib, json, os, re
+import hashlib, json, os, re, uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -12,7 +13,7 @@ import google.generativeai as genai
 import psycopg2
 import psycopg2.extras
 from dotenv import load_dotenv
-from fastapi import Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from jose import JWTError, jwt
@@ -53,6 +54,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ─── Job store (en memoria) ─────────────────────────────────────────────────
+_transcription_jobs: Dict[str, Dict[str, Any]] = {}
+_executor = ThreadPoolExecutor(max_workers=4)
+
 
 # ─── Health check ────────────────────────────────────────────────────────────
 @app.get("/")
@@ -466,8 +472,40 @@ def get_transcription(recording_id: int, user=Depends(get_current_user)):
     return {"transcription": row[0]}
 
 
+def _run_transcription_job(recording_id: int, job_id: str, audio_path_str: str, mime: str) -> None:
+    """Se ejecuta en un hilo separado para no bloquear el proxy."""
+    try:
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        audio_file = genai.upload_file(audio_path_str, mime_type=mime)
+        prompt = """Transcribe esta conversación/reunión identificando CADA HABLANTE por separado.
+
+FORMATO EXACTO (una línea por intervención, sin líneas vacías entre ellas):
+NombreHablante: Texto exacto que dijo
+
+REGLAS:
+- Usa los nombres reales si se mencionan en la conversación
+- Si no hay nombre, usa Voz1, Voz2, Voz3...
+- Mantén consistencia: el mismo hablante siempre tiene el mismo nombre
+- Transcribe textualmente sin parafrasear
+- NO incluyas explicaciones, solo el diálogo"""
+        response = model.generate_content([prompt, audio_file])
+        transcription = response.text
+        db = get_db()
+        try:
+            with db.cursor() as cur:
+                cur.execute(
+                    "UPDATE recordings SET transcription=%s, updated_at=NOW() WHERE id=%s",
+                    (transcription, recording_id),
+                )
+        finally:
+            db.close()
+        _transcription_jobs[job_id] = {"status": "completed", "transcription": transcription}
+    except Exception as exc:
+        _transcription_jobs[job_id] = {"status": "error", "error": str(exc)}
+
+
 @app.post("/api/recordings/{recording_id}/transcribe")
-async def transcribe(recording_id: int, user=Depends(get_current_user)):
+def transcribe(recording_id: int, background_tasks: BackgroundTasks, user=Depends(get_current_user)):
     if not GEMINI_API_KEY:
         raise HTTPException(500, "GEMINI_API_KEY no configurada")
     db = get_db()
@@ -484,31 +522,18 @@ async def transcribe(recording_id: int, user=Depends(get_current_user)):
         raise HTTPException(404, "Archivo de audio no encontrado en el servidor")
     ext = row[0].rsplit(".", 1)[-1].lower()
     mime = MIME_TYPES.get(ext, "audio/mpeg")
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    audio_file = genai.upload_file(str(audio_path), mime_type=mime)
-    prompt = """Transcribe esta conversación/reunión identificando CADA HABLANTE por separado.
+    job_id = str(uuid.uuid4())
+    _transcription_jobs[job_id] = {"status": "processing"}
+    background_tasks.add_task(_run_transcription_job, recording_id, job_id, str(audio_path), mime)
+    return {"job_id": job_id, "status": "processing"}
 
-FORMATO EXACTO (una línea por intervención, sin líneas vacías entre ellas):
-NombreHablante: Texto exacto que dijo
 
-REGLAS:
-- Usa los nombres reales si se mencionan en la conversación
-- Si no hay nombre, usa Voz1, Voz2, Voz3...
-- Mantén consistencia: el mismo hablante siempre tiene el mismo nombre
-- Transcribe textualmente sin parafrasear
-- NO incluyas explicaciones, solo el diálogo"""
-    response = model.generate_content([prompt, audio_file])
-    transcription = response.text
-    db = get_db()
-    try:
-        with db.cursor() as cur:
-            cur.execute(
-                "UPDATE recordings SET transcription=%s, updated_at=NOW() WHERE id=%s",
-                (transcription, recording_id),
-            )
-    finally:
-        db.close()
-    return {"transcription": transcription}
+@app.get("/api/transcription-jobs/{job_id}")
+def get_transcription_job(job_id: str, user=Depends(get_current_user)):
+    job = _transcription_jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Job no encontrado o expirado")
+    return job
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
