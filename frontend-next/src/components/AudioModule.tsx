@@ -2,7 +2,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Mic, MicOff, Upload, Trash2, FileAudio, RefreshCw,
-  ChevronRight, CheckCircle2, Clock, Edit2, Check, X
+  ChevronRight, CheckCircle2, Clock, Edit2, Check, X,
+  CheckSquare, Square
 } from "lucide-react";
 import {
   getRecordings, uploadRecording, deleteRecording, renameRecording,
@@ -10,7 +11,7 @@ import {
 } from "@/lib/api";
 
 interface AudioModuleProps {
-  onSelectRecording: (id: number) => void;
+  onSelectRecording: (id: number, name?: string) => void;
   selectedRecordingId: number | null;
   onNavigate: (tab: string) => void;
 }
@@ -33,6 +34,11 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
   // Rename state
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
+
+  // Batch delete state
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchSelected, setBatchSelected] = useState<Set<number>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,6 +138,29 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
     } catch { /* ignore */ }
   };
 
+  const toggleBatchSelect = (id: number) => {
+    setBatchSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBatchDelete = async () => {
+    if (batchSelected.size === 0) return;
+    if (!confirm(`¿Eliminar ${batchSelected.size} grabación(es) seleccionadas?`)) return;
+    setBatchDeleting(true);
+    const ids = Array.from(batchSelected);
+    for (const id of ids) {
+      try { await deleteRecording(id); } catch { /* ignore */ }
+    }
+    setRecordings((prev) => prev.filter((r) => !batchSelected.has(r.id)));
+    if (selectedRecordingId && batchSelected.has(selectedRecordingId)) onSelectRecording(0);
+    setBatchSelected(new Set());
+    setBatchMode(false);
+    setBatchDeleting(false);
+  };
+
   // â”€â”€ Rename â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const startEdit = (r: Recording) => { setEditingId(r.id); setEditName(r.filename); };
   const cancelEdit = () => { setEditingId(null); setEditName(""); };
@@ -145,8 +174,8 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
   };
 
   // â”€â”€ Select + navigate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  const handleSelectAndNavigate = (id: number, tab: string) => {
-    onSelectRecording(id);
+  const handleSelectAndNavigate = (id: number, name: string, tab: string) => {
+    onSelectRecording(id, name);
     onNavigate(tab);
   };
 
@@ -251,17 +280,28 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
 
       {/* Recordings list */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>
             Audios guardados <span className="font-normal" style={{ color: "var(--text-m)" }}>({recordings.length})</span>
           </h2>
-          <button
-            onClick={loadRecordings}
-            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all hover:bg-[var(--hover-bg)]"
-            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
-          >
-            <RefreshCw className="w-3 h-3" /> Actualizar
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => { setBatchMode((b) => !b); setBatchSelected(new Set()); }}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all ${
+                batchMode ? "border-red-500/50 text-red-500 bg-red-500/5" : "hover:bg-[var(--hover-bg)]"
+              }`}
+              style={!batchMode ? { borderColor: "var(--border-color)", color: "var(--text-m)" } : undefined}
+            >
+              <CheckSquare className="w-3 h-3" /> {batchMode ? "Cancelar" : "Seleccionar"}
+            </button>
+            <button
+              onClick={loadRecordings}
+              className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all hover:bg-[var(--hover-bg)]"
+              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
+            >
+              <RefreshCw className="w-3 h-3" /> Actualizar
+            </button>
+          </div>
         </div>
 
         {loadingRecordings ? (
@@ -277,18 +317,52 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
             <p className="text-sm" style={{ color: "var(--text-m)" }}>No hay grabaciones aÃºn</p>
           </div>
         ) : (
+          <>
+          {/* Batch delete bar */}
+          {batchMode && batchSelected.size > 0 && (
+            <div
+              className="flex items-center justify-between px-4 py-2.5 rounded-xl border"
+              style={{ background: "var(--surface)", borderColor: "var(--border-med)" }}
+            >
+              <span className="text-sm font-medium" style={{ color: "var(--text-h)" }}>
+                {batchSelected.size} grabación{batchSelected.size !== 1 ? "es" : ""} seleccionada{batchSelected.size !== 1 ? "s" : ""}
+              </span>
+              <button
+                onClick={handleBatchDelete}
+                disabled={batchDeleting}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500 hover:bg-red-500/20 transition-all disabled:opacity-50"
+              >
+                {batchDeleting ? (
+                  <span className="w-3 h-3 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Trash2 className="w-3 h-3" />
+                )}
+                Eliminar seleccionados
+              </button>
+            </div>
+          )}
+
           <div className="space-y-2">
             {recordings.map((r) => (
               <div
                 key={r.id}
                 className={`rounded-xl border flex items-center gap-3 px-4 py-3 transition-all ${
-                  selectedRecordingId === r.id ? "border-violet-500/50 bg-violet-500/5" : ""
+                  batchSelected.has(r.id)
+                    ? "border-red-500/40 bg-red-500/5 cursor-pointer"
+                    : selectedRecordingId === r.id ? "border-violet-500/50 bg-violet-500/5" : batchMode ? "cursor-pointer" : ""
                 }`}
-                style={selectedRecordingId !== r.id
+                style={!batchSelected.has(r.id) && selectedRecordingId !== r.id
                   ? { background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }
                   : { boxShadow: "var(--shadow-card)" }}
+                onClick={batchMode ? () => toggleBatchSelect(r.id) : undefined}
               >
-                <FileAudio className="w-4 h-4 shrink-0 text-violet-400" />
+                {batchMode ? (
+                  batchSelected.has(r.id)
+                    ? <CheckSquare className="w-4 h-4 shrink-0 text-red-500" />
+                    : <Square className="w-4 h-4 shrink-0" style={{ color: "var(--text-m)" }} />
+                ) : (
+                  <FileAudio className="w-4 h-4 shrink-0 text-violet-400" />
+                )}
 
                 {editingId === r.id ? (
                   <div className="flex-1 flex items-center gap-2">
@@ -325,10 +399,10 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
                 )}
 
                 {/* Actions */}
-                {editingId !== r.id && (
+                {editingId !== r.id && !batchMode && (
                   <div className="flex items-center gap-1 shrink-0">
                     <button
-                      onClick={() => handleSelectAndNavigate(r.id, "transcriptions")}
+                      onClick={() => handleSelectAndNavigate(r.id, r.filename, "transcriptions")}
                       title="Transcribir"
                       className="p-1.5 rounded-lg hover:bg-violet-500/10 hover:text-violet-500 transition-colors"
                       style={{ color: "var(--text-m)" }}
@@ -356,6 +430,7 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
               </div>
             ))}
           </div>
+          </>
         )}
       </div>
     </div>
