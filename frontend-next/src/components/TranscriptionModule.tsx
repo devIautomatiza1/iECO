@@ -100,7 +100,10 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
     audio.currentTime = ratio * duration;
   };
 
-  const fmtTime = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const fmtTime = (s: number) => {
+    if (!s || !isFinite(s)) return "--:--";
+    return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  };
 
   // Transcribe
   const handleTranscribe = async () => {
@@ -112,7 +115,11 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
       setTranscription(res.transcription);
       setRecordings((prev) => prev.map((r) => r.id === recordingId ? { ...r, transcribed: true } : r));
     } catch (err: unknown) {
-      setTranscribeError(err instanceof Error ? err.message : "Error al transcribir");
+      const msg = err instanceof Error ? err.message : "Error al transcribir";
+      const friendly = msg.includes("429") || msg.toLowerCase().includes("resource exhausted")
+        ? "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo."
+        : msg;
+      setTranscribeError(friendly);
     } finally {
       setTranscribing(false);
     }
