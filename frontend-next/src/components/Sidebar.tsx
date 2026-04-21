@@ -4,7 +4,7 @@ import { useTheme } from "next-themes";
 import {
   Mic, LayoutDashboard, FileText, Ticket,
   MessageSquare, Settings, LogOut, ChevronLeft, ChevronRight, Zap,
-  Sun, Moon, Monitor
+  Sun, Moon
 } from "lucide-react";
 
 const navItems = [
@@ -16,11 +16,7 @@ const navItems = [
   { icon: Settings, label: "Ajustes", id: "settings" },
 ];
 
-const THEME_CYCLE: Record<string, { next: string; icon: React.ElementType; label: string }> = {
-  light:  { next: "dark",   icon: Moon,    label: "Modo oscuro"   },
-  dark:   { next: "system", icon: Monitor, label: "Según sistema" },
-  system: { next: "light",  icon: Sun,     label: "Modo claro"    },
-};
+
 
 interface SidebarProps {
   activeTab: string;
@@ -34,9 +30,7 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
 
   useEffect(() => setMounted(true), []);
 
-  const current = theme ?? "system";
-  const cycleInfo = THEME_CYCLE[current] ?? THEME_CYCLE.system;
-  const ThemeIcon = cycleInfo.icon;
+  const isDark = theme === "dark";
 
   return (
     <aside
@@ -85,13 +79,13 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
         {/* Toggle de tema */}
         {mounted && (
           <button
-            onClick={() => setTheme(cycleInfo.next)}
-            title={cycleInfo.label}
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            title={isDark ? "Modo claro" : "Modo oscuro"}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-[var(--hover-bg)]"
             style={{ color: "var(--text-m)" }}
           >
-            <ThemeIcon className="w-4 h-4 shrink-0" />
-            {!collapsed && <span>{cycleInfo.label}</span>}
+            {isDark ? <Sun className="w-4 h-4 shrink-0" /> : <Moon className="w-4 h-4 shrink-0" />}
+            {!collapsed && <span>{isDark ? "Modo claro" : "Modo oscuro"}</span>}
           </button>
         )}
 
