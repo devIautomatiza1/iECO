@@ -6,6 +6,14 @@ def get_styles():
     """Retorna todos los estilos CSS de la aplicación"""
     return """
     <style>
+    /* Ocultar barra de Streamlit (menú ⋮, header, footer) */
+    #MainMenu, header, footer,
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    [data-testid="stStatusWidget"],
+    .stDeployButton { display: none !important; }
+
     /* ============================================================
        VARIABLES CSS - Colores del diseño
        ============================================================ */
