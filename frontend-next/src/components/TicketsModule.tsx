@@ -107,38 +107,38 @@ export default function TicketsModule({ recordingId, onSelectRecording }: Ticket
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Tickets</h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Oportunidades y acciones detectadas por IA</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={loadTickets}
-            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all hover:bg-[var(--hover-bg)]"
-            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
-          >
-            <RefreshCw className="w-3 h-3" />
-          </button>
-          <div className="flex items-center gap-1 p-1 rounded-xl border" style={{ background: "var(--surface)", borderColor: "var(--border-color)" }}>
-            {(["all", "open", "closed"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
-                  filter === f ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
-                }`}
-                style={filter !== f ? { color: "var(--text-b)" } : undefined}
-              >
-                {f === "all" ? "Todos" : f === "open" ? "Abiertos" : "Cerrados"}
-                <span className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                  filter === f ? "bg-white/20 text-white" : "bg-[var(--border-color)]"
-                }`} style={filter !== f ? { color: "var(--text-m)" } : undefined}>
-                  {counts[f]}
-                </span>
-              </button>
-            ))}
-          </div>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Tickets</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Oportunidades y acciones detectadas por IA</p>
+      </div>
+
+      {/* Filtros */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={loadTickets}
+          className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all hover:bg-[var(--hover-bg)]"
+          style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
+        >
+          <RefreshCw className="w-3 h-3" />
+        </button>
+        <div className="flex items-center gap-1 p-1 rounded-xl border" style={{ background: "var(--surface)", borderColor: "var(--border-color)" }}>
+          {(["all", "open", "closed"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${
+                filter === f ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
+              }`}
+              style={filter !== f ? { color: "var(--text-b)" } : undefined}
+            >
+              {f === "all" ? "Todos" : f === "open" ? "Abiertos" : "Cerrados"}
+              <span className={`ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                filter === f ? "bg-white/20 text-white" : "bg-[var(--border-color)]"
+              }`} style={filter !== f ? { color: "var(--text-m)" } : undefined}>
+                {counts[f]}
+              </span>
+            </button>
+          ))}
         </div>
       </div>
 

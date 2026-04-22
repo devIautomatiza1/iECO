@@ -25,9 +25,9 @@ export default function DashboardModule({ onNavigate, onSelectRecording }: Dashb
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Dashboard</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Dashboard</h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Resumen de tu actividad en iECO</p>
       </div>
 
@@ -100,31 +100,31 @@ export default function DashboardModule({ onNavigate, onSelectRecording }: Dashb
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => onNavigate?.("audio")}
-          className="group flex items-center gap-4 rounded-xl px-5 py-4 text-left transition-all border bg-violet-600/8 hover:bg-violet-600/14 border-violet-500/20 hover:border-violet-500/40"
+          className="group flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl px-4 py-4 sm:px-5 text-left transition-all border bg-violet-600/8 hover:bg-violet-600/14 border-violet-500/20 hover:border-violet-500/40"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <div className="w-10 h-10 rounded-xl bg-violet-600/15 flex items-center justify-center shrink-0">
-            <Mic className="w-5 h-5 text-violet-500" />
+          <div className="w-9 h-9 rounded-xl bg-violet-600/15 flex items-center justify-center shrink-0">
+            <Mic className="w-4 h-4 text-violet-500" />
           </div>
           <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-violet-600 dark:text-violet-300">Nueva grabación</p>
-            <p className="text-xs mt-0.5" style={{ color: "var(--text-m)" }}>Graba una reunión ahora</p>
+            <p className="text-sm font-semibold text-violet-600 dark:text-violet-300 leading-tight">Nueva grabación</p>
+            <p className="text-xs mt-0.5 hidden sm:block" style={{ color: "var(--text-m)" }}>Graba una reunión ahora</p>
           </div>
-          <ArrowRight className="w-4 h-4 text-violet-500/50 group-hover:text-violet-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+          <ArrowRight className="hidden sm:block w-4 h-4 text-violet-500/50 group-hover:text-violet-500 group-hover:translate-x-0.5 transition-all shrink-0" />
         </button>
         <button
           onClick={() => onNavigate?.("tickets")}
-          className="group flex items-center gap-4 rounded-xl px-5 py-4 text-left transition-all border bg-indigo-600/8 hover:bg-indigo-600/14 border-indigo-500/20 hover:border-indigo-500/40"
+          className="group flex flex-col sm:flex-row sm:items-center gap-3 rounded-xl px-4 py-4 sm:px-5 text-left transition-all border bg-indigo-600/8 hover:bg-indigo-600/14 border-indigo-500/20 hover:border-indigo-500/40"
           style={{ boxShadow: "var(--shadow-card)" }}
         >
-          <div className="w-10 h-10 rounded-xl bg-indigo-600/15 flex items-center justify-center shrink-0">
-            <Clock className="w-5 h-5 text-indigo-500" />
+          <div className="w-9 h-9 rounded-xl bg-indigo-600/15 flex items-center justify-center shrink-0">
+            <Clock className="w-4 h-4 text-indigo-500" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300">Tickets pendientes</p>
+            <p className="text-sm font-semibold text-indigo-600 dark:text-indigo-300 leading-tight">Tickets pendientes</p>
             <p className="text-xs mt-0.5" style={{ color: "var(--text-m)" }}>{stats ? `${stats.open_tickets} abiertos` : "Cargando…"}</p>
           </div>
-          <ArrowRight className="w-4 h-4 text-indigo-500/50 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all shrink-0" />
+          <ArrowRight className="hidden sm:block w-4 h-4 text-indigo-500/50 group-hover:text-indigo-500 group-hover:translate-x-0.5 transition-all shrink-0" />
         </button>
       </div>
     </div>

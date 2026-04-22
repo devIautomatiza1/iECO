@@ -150,15 +150,14 @@ export default function SettingsModule({ isSuperAdmin }: SettingsModuleProps) {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Configuración</h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>
-            Diccionario de keywords para detección automática de tickets
-          </p>
-        </div>
-        {isSuperAdmin && (
-          <div className="flex gap-2">
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Configuración</h1>
+        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>
+          Diccionario de keywords para detección automática de tickets
+        </p>
+      </div>
+      {isSuperAdmin && (
+        <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setShowNewForm((v) => !v)}
               className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-violet-600/10 border border-violet-500/25 text-violet-500 hover:bg-violet-600/20 transition-all"
@@ -175,7 +174,6 @@ export default function SettingsModule({ isSuperAdmin }: SettingsModuleProps) {
             </button>
           </div>
         )}
-      </div>
 
       {/* Status messages */}
       {error && (

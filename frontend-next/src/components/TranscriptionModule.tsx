@@ -190,7 +190,7 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
     return (
       <div className="space-y-5">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Transcripción</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Transcripción</h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Selecciona una grabación para transcribir</p>
         </div>
         {recordings.length > 0 ? (
@@ -221,52 +221,52 @@ export default function TranscriptionModule({ recordingId, onSelectRecording }: 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Transcripción</h1>
-          <p className="text-sm mt-1 truncate max-w-xs" style={{ color: "var(--text-b)" }}>
-            {activeRecording?.filename ?? `#${recordingId}`}
-          </p>
-        </div>
-        <div className="flex gap-2 shrink-0 flex-wrap">
-          {transcription && (
-            <>
-              <button
-                onClick={handleCopy}
-                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all ${
-                  copied
-                    ? "bg-emerald-600/10 border-emerald-500/25 text-emerald-500"
-                    : "bg-slate-500/10 border-slate-500/25 text-slate-500 hover:bg-slate-500/20"
-                }`}
-              >
-                {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                {copied ? "Copiado" : "Copiar"}
-              </button>
-              <button onClick={shareEmail} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600/10 border border-indigo-500/25 text-indigo-500 hover:bg-indigo-600/20 transition-all">
-                <Mail className="w-3.5 h-3.5" /> Email
-              </button>
-              <button onClick={shareWhatsApp} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-600/20 transition-all">
-                <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
-              </button>
-              <button
-                onClick={handleGenerateSummary}
-                disabled={generatingSummary}
-                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-sky-600/10 border border-sky-500/25 text-sky-500 hover:bg-sky-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                {generatingSummary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                {generatingSummary ? "Generando…" : "Resumen IA"}
-              </button>
-            </>
-          )}
-          <button
-            onClick={handleAnalyze}
-            disabled={!transcription || analyzing}
-            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-violet-600/10 border border-violet-500/25 text-violet-500 hover:bg-violet-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-          >
-            {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ticket className="w-3.5 h-3.5" />}
-            {analyzing ? "Analizando…" : "Crear tickets"}
-          </button>
-        </div>
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Transcripción</h1>
+        <p className="text-sm mt-1 truncate" style={{ color: "var(--text-b)" }}>
+          {activeRecording?.filename ?? `#${recordingId}`}
+        </p>
+      </div>
+
+      {/* Action buttons — scroll horizontal en móvil */}
+      <div className="flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        {transcription && (
+          <>
+            <button
+              onClick={handleCopy}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all shrink-0 ${
+                copied
+                  ? "bg-emerald-600/10 border-emerald-500/25 text-emerald-500"
+                  : "bg-slate-500/10 border-slate-500/25 text-slate-500 hover:bg-slate-500/20"
+              }`}
+            >
+              {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? "Copiado" : "Copiar"}
+            </button>
+            <button onClick={shareEmail} className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-indigo-600/10 border border-indigo-500/25 text-indigo-500 hover:bg-indigo-600/20 transition-all">
+              <Mail className="w-3.5 h-3.5" /> Email
+            </button>
+            <button onClick={shareWhatsApp} className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-500/25 text-emerald-500 hover:bg-emerald-600/20 transition-all">
+              <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
+            </button>
+            <button
+              onClick={handleGenerateSummary}
+              disabled={generatingSummary}
+              className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-sky-600/10 border border-sky-500/25 text-sky-500 hover:bg-sky-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {generatingSummary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              {generatingSummary ? "Generando…" : "Resumen IA"}
+            </button>
+          </>
+        )}
+        <button
+          onClick={handleAnalyze}
+          disabled={!transcription || analyzing}
+          className="shrink-0 flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg bg-violet-600/10 border border-violet-500/25 text-violet-500 hover:bg-violet-600/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+        >
+          {analyzing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Ticket className="w-3.5 h-3.5" />}
+          {analyzing ? "Analizando…" : "Crear tickets"}
+        </button>
       </div>
 
       {analyzeMsg && (

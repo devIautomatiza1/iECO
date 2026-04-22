@@ -61,7 +61,7 @@ export default function ChatModule({ recordingId, onSelectRecording }: ChatModul
       {/* Header */}
       <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Asistente IA</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Asistente IA</h1>
           <div className="flex items-center gap-1.5 mt-1">
             {activeRecording ? (
               <span className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md border" style={{ background: "var(--surface)", borderColor: "var(--border-color)", color: "var(--text-m)" }}>

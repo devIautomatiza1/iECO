@@ -189,7 +189,7 @@ export default function AudioModule({ onSelectRecording, selectedRecordingId, on
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Grabaciones</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>Grabaciones</h1>
         <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>Sube audios o graba directamente desde el navegador</p>
       </div>
 
