@@ -12,8 +12,6 @@ import AdminModule from "@/components/AdminModule";
 import SettingsModule from "@/components/SettingsModule";
 import { FileAudio, AlignLeft, MessageSquare, Tag, X } from "lucide-react";
 
-const SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"];
-
 export default function Home() {
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -33,7 +31,7 @@ export default function Home() {
     );
   }
 
-  const isSuperAdmin = SUPERADMIN_EMAILS.includes(user.email);
+  const isSuperAdmin = user.role === "superadmin";
 
   const handleSelectRecording = (id: number, name?: string) => {
     setSelectedRecordingId(id);
