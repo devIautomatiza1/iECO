@@ -1046,6 +1046,47 @@ def update_keywords(body: Dict = Body(...), user=Depends(get_current_user)):
 # OPPORTUNITIES / TICKETS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@app.get("/api/opportunities/recent")
+def get_recent_opportunities(limit: int = 5, user=Depends(get_current_user)):
+    """Returns the most recent open opportunities with recording filename, scoped by role."""
+    role = user["role"]
+    uid = user["id"]
+    cid = user.get("company_id")
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if role == "superadmin":
+                cur.execute(
+                    """SELECT o.id, o.title, o.priority, o.status, o.assignee, o.created_at,
+                              r.filename AS recording_filename, r.id AS recording_id
+                       FROM opportunities o JOIN recordings r ON o.recording_id = r.id
+                       ORDER BY o.created_at DESC LIMIT %s""",
+                    (limit,),
+                )
+            elif role == "company_admin":
+                cur.execute(
+                    """SELECT o.id, o.title, o.priority, o.status, o.assignee, o.created_at,
+                              r.filename AS recording_filename, r.id AS recording_id
+                       FROM opportunities o JOIN recordings r ON o.recording_id = r.id
+                       WHERE r.company_id = %s
+                       ORDER BY o.created_at DESC LIMIT %s""",
+                    (cid, limit),
+                )
+            else:
+                cur.execute(
+                    """SELECT o.id, o.title, o.priority, o.status, o.assignee, o.created_at,
+                              r.filename AS recording_filename, r.id AS recording_id
+                       FROM opportunities o JOIN recordings r ON o.recording_id = r.id
+                       WHERE r.user_id = %s
+                       ORDER BY o.created_at DESC LIMIT %s""",
+                    (uid, limit),
+                )
+            rows = cur.fetchall()
+    finally:
+        db.close()
+    return [dict(r) for r in rows]
+
+
 @app.get("/api/recordings/{recording_id}/opportunities")
 def get_opportunities(recording_id: int, user=Depends(get_current_user)):
     db = get_db()

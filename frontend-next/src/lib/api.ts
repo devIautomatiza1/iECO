@@ -241,6 +241,21 @@ export const rejectRequest = (id: number) =>
 export const deleteRegistrationRequest = (id: number) =>
   request<{ ok: boolean }>(`/api/admin/requests/${id}`, { method: "DELETE" });
 
+// ─── Recent tickets (dashboard) ───────────────────────────────────────────────
+export interface RecentTicket {
+  id: number;
+  title: string;
+  priority: "high" | "medium" | "low";
+  status: "open" | "closed";
+  assignee: string;
+  created_at: string;
+  recording_filename: string;
+  recording_id: number;
+}
+
+export const getRecentTickets = (limit = 5) =>
+  request<RecentTicket[]>(`/api/opportunities/recent?limit=${limit}`);
+
 // ─── Companies ────────────────────────────────────────────────────────────────
 export interface Company {
   id: number;
