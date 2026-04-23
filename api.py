@@ -2,7 +2,7 @@
 Arrancar con: uvicorn api:app --reload --port 8000
 """
 from __future__ import annotations
-import hashlib, json, os, re, uuid
+import hashlib, json, os, re, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -36,6 +36,32 @@ ALLOWED_EXTS = set(MIME_TYPES.keys())
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+
+# ─── Gemini helper con reintentos ────────────────────────────────────────────
+def _is_rate_limit_error(err_str: str) -> bool:
+    return "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower()
+
+def _is_permanent_quota_error(err_str: str) -> bool:
+    """Cuota mensual/diaria agotada (no es un pico de RPM)."""
+    el = err_str.lower()
+    return "daily" in el or "monthly" in el or "billing" in el
+
+def _gemini_generate(model, prompt, max_retries: int = 3):
+    """Llama a model.generate_content con backoff exponencial en errores 429."""
+    for attempt in range(max_retries + 1):
+        try:
+            return model.generate_content(prompt)
+        except Exception as e:
+            err_str = str(e)
+            if _is_rate_limit_error(err_str):
+                if _is_permanent_quota_error(err_str):
+                    raise HTTPException(429, "Cuota mensual de Gemini AI agotada. Revisa tu facturación en Google AI Studio.")
+                if attempt < max_retries:
+                    wait = 2 ** attempt  # 1s → 2s → 4s
+                    time.sleep(wait)
+                    continue
+                raise HTTPException(429, "Límite de frecuencia de Gemini alcanzado. Espera 1 minuto y vuelve a intentarlo.")
+            raise
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="iECO API", version="1.0.0")
@@ -907,7 +933,18 @@ REGLAS:
 - Mantén consistencia: el mismo hablante siempre tiene el mismo nombre
 - Transcribe textualmente sin parafrasear
 - NO incluyas explicaciones, solo el diálogo"""
-        response = model.generate_content([prompt, audio_file])
+        # Reintentos con backoff para la transcripción (hilo secundario)
+        response = None
+        for attempt in range(4):
+            try:
+                response = model.generate_content([prompt, audio_file])
+                break
+            except Exception as e:
+                err_str = str(e)
+                if _is_rate_limit_error(err_str) and not _is_permanent_quota_error(err_str) and attempt < 3:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise
         transcription = response.text
         db = get_db()
         try:
@@ -920,7 +957,15 @@ REGLAS:
             db.close()
         _transcription_jobs[job_id] = {"status": "completed", "transcription": transcription}
     except Exception as exc:
-        _transcription_jobs[job_id] = {"status": "error", "error": str(exc)}
+        err_str = str(exc)
+        if _is_rate_limit_error(err_str):
+            if _is_permanent_quota_error(err_str):
+                msg = "Cuota mensual de Gemini AI agotada. Revisa tu facturación en Google AI Studio."
+            else:
+                msg = "Límite de frecuencia de Gemini alcanzado. Espera 1 minuto y vuelve a intentarlo."
+        else:
+            msg = err_str
+        _transcription_jobs[job_id] = {"status": "error", "error": msg}
 
 
 @app.post("/api/recordings/{recording_id}/transcribe")
@@ -988,13 +1033,12 @@ El resumen debe incluir:
 
 Redacta en español, con tono profesional y en formato claro. Usa negrita para los encabezados de cada sección."""
     try:
-        response = model.generate_content(prompt)
+        response = _gemini_generate(model, prompt)
         return {"summary": response.text}
+    except HTTPException:
+        raise
     except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
-        raise HTTPException(500, f"Error al generar resumen: {err_str}")
+        raise HTTPException(500, f"Error al generar resumen: {str(e)}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1133,12 +1177,11 @@ Responde ÚNICAMENTE con un JSON array (sin markdown, sin explicaciones):
   }}
 ]"""
     try:
-        response = model.generate_content(prompt)
+        response = _gemini_generate(model, prompt)
+    except HTTPException:
+        raise
     except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
-        raise HTTPException(500, f"Error al analizar con IA: {err_str}")
+        raise HTTPException(500, f"Error al analizar con IA: {str(e)}")
     raw = response.text.strip()
     # Extraer el array JSON incluso si hay texto extra
     json_match = re.search(r"\[.*\]", raw, re.DOTALL)
@@ -1250,10 +1293,9 @@ async def chat(body: Dict = Body(...), user=Depends(get_current_user)):
     )
     try:
         model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content("\n".join(prompt_parts))
+        response = _gemini_generate(model, "\n".join(prompt_parts))
         return {"response": response.text}
+    except HTTPException:
+        raise
     except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower():
-            raise HTTPException(429, "Cuota de Gemini AI agotada. Espera unos minutos y vuelve a intentarlo.")
-        raise HTTPException(500, f"Error al generar respuesta: {err_str}")
+        raise HTTPException(500, f"Error al generar respuesta: {str(e)}")
