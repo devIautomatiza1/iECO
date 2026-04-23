@@ -211,6 +211,9 @@ export const toggleAdminUser = (id: number, active: boolean) =>
     body: JSON.stringify({ active }),
   });
 
+export const updateAdminUser = (id: number, data: { name?: string; email?: string; role?: string; company_id?: number | null }) =>
+  request<AdminUser>(`/api/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
 export const deleteAdminUser = (id: number) =>
   request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" });
 

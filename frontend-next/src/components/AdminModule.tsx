@@ -2,10 +2,10 @@
 import { useState, useEffect, FormEvent } from "react";
 import {
   Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw,
-  Eye, EyeOff, Building2, PlusCircle, ShieldCheck,
+  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil,
 } from "lucide-react";
 import {
-  getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, AdminUser,
+  getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, updateAdminUser, AdminUser,
   getCompanies, createCompany, updateCompany, deleteCompany, Company,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -51,6 +51,15 @@ export default function AdminModule() {
   const [showPwd, setShowPwd] = useState(false);
   const [createUserLoading, setCreateUserLoading] = useState(false);
   const [createUserError, setCreateUserError] = useState("");
+
+  // ── Edit user state ────────────────────────────────────────────────────
+  const [editUserId, setEditUserId] = useState<number | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editCompanyId, setEditCompanyId] = useState<number | "">("");
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState("");
 
   // ── Companies state ────────────────────────────────────────────────────
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -128,6 +137,35 @@ export default function AdminModule() {
       setShowCreateUser(false);
     } catch (e: unknown) { setCreateUserError(e instanceof Error ? e.message : "Error al crear usuario"); }
     finally { setCreateUserLoading(false); }
+  };
+
+  const openEdit = (u: AdminUser) => {
+    setEditUserId(u.id);
+    setEditName(u.name);
+    setEditEmail(u.email);
+    setEditRole(u.role);
+    setEditCompanyId(u.company_id ?? "");
+    setEditError("");
+    setDeleteConfirm(null);
+  };
+
+  const handleEditUser = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editName.trim() || !editEmail.trim()) {
+      setEditError("Nombre y email son obligatorios"); return;
+    }
+    setEditLoading(true); setEditError("");
+    try {
+      const updated = await updateAdminUser(editUserId!, {
+        name: editName.trim(),
+        email: editEmail.trim(),
+        role: editRole,
+        company_id: isSuperAdmin ? (editCompanyId === "" ? null : Number(editCompanyId)) : undefined,
+      });
+      setUsers((prev) => prev.map((u) => (u.id === editUserId ? { ...u, ...updated } : u)));
+      setEditUserId(null);
+    } catch (e: unknown) { setEditError(e instanceof Error ? e.message : "Error al guardar"); }
+    finally { setEditLoading(false); }
   };
 
   // ── Company actions ────────────────────────────────────────────────────
@@ -319,19 +357,77 @@ export default function AdminModule() {
                       </span>
                       {u.role !== "superadmin" && u.id !== currentUser?.id && (
                         <div className="flex items-center gap-2 shrink-0">
+                          <button onClick={() => editUserId === u.id ? setEditUserId(null) : openEdit(u)}
+                            title="Editar usuario"
+                            className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                              editUserId === u.id
+                                ? "bg-violet-600 border-violet-600 text-white"
+                                : "hover:bg-[var(--hover-bg)]"
+                            }`}
+                            style={editUserId !== u.id ? { borderColor: "var(--border-color)", color: "var(--text-m)" } : {}}>
+                            <Pencil className="w-4 h-4" />
+                          </button>
                           <button onClick={() => handleToggleUser(u)} disabled={actionLoading === u.id}
                             title={u.active ? "Desactivar" : "Activar"}
                             className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
                             style={{ borderColor: "var(--border-color)" }}>
                             {u.active ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />}
                           </button>
-                          <button onClick={() => setDeleteConfirm(u.id)} disabled={actionLoading === u.id}
+                          <button onClick={() => { setDeleteConfirm(u.id); setEditUserId(null); }} disabled={actionLoading === u.id}
                             className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
                             <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       )}
                     </div>
+                    {/* Edit panel */}
+                    {editUserId === u.id && (
+                      <div className="px-5 py-4 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                        {editError && <div className="text-xs px-3 py-2 mb-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{editError}</div>}
+                        <form onSubmit={handleEditUser} className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre</label>
+                            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
+                              className={inputClass} style={inputStyle} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email</label>
+                            <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                              className={inputClass} style={inputStyle} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
+                            <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                              className={inputClass} style={inputStyle}>
+                              {isSuperAdmin && <option value="superadmin">Superadmin</option>}
+                              <option value="company_admin">Admin de empresa</option>
+                              <option value="company_user">Usuario</option>
+                            </select>
+                          </div>
+                          {isSuperAdmin && (
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa</label>
+                              <select value={editCompanyId}
+                                onChange={(e) => setEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                                className={inputClass} style={inputStyle}>
+                                <option value="">— Sin empresa —</option>
+                                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="col-span-2 flex gap-2 justify-end pt-1">
+                            <button type="button" onClick={() => setEditUserId(null)}
+                              className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                            <button type="submit" disabled={editLoading}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors">
+                              {editLoading ? "Guardando..." : "Guardar cambios"}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+                    {/* Delete confirm panel */}
                     {deleteConfirm === u.id && (
                       <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
                         <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>

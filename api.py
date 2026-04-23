@@ -426,6 +426,46 @@ def admin_toggle_user(user_id: int, body: Dict = Body(...), admin=Depends(requir
     return {"ok": True}
 
 
+@app.patch("/api/admin/users/{user_id}")
+def admin_update_user(user_id: int, body: Dict = Body(...), admin=Depends(require_company_admin)):
+    allowed = {"name", "email", "role", "company_id"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        raise HTTPException(400, "No hay campos válidos para actualizar")
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT company_id, role FROM users WHERE id=%s", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Usuario no encontrado")
+            if row["role"] == "superadmin" and admin["role"] != "superadmin":
+                raise HTTPException(403, "No se puede modificar un superadmin")
+            if admin["role"] != "superadmin" and row["company_id"] != admin["company_id"]:
+                raise HTTPException(403, "No puedes modificar usuarios de otra empresa")
+            # company_admin no puede asignar superadmin
+            if admin["role"] != "superadmin" and updates.get("role") == "superadmin":
+                raise HTTPException(403, "No puedes asignar el rol superadmin")
+            # Si cambia email, verificar unicidad
+            if "email" in updates:
+                cur.execute("SELECT id FROM users WHERE email=%s AND id!=%s", (updates["email"], user_id))
+                if cur.fetchone():
+                    raise HTTPException(409, "Ese email ya está en uso")
+            set_clause = ", ".join(f"{k}=%s" for k in updates)
+            cur.execute(f"UPDATE users SET {set_clause} WHERE id=%s", (*updates.values(), user_id))
+            cur.execute(
+                """SELECT u.id, u.email, u.name, u.role, u.company, u.company_id,
+                          u.active, u.created_at, c.name as company_name
+                   FROM users u LEFT JOIN companies c ON c.id=u.company_id
+                   WHERE u.id=%s""",
+                (user_id,)
+            )
+            updated = dict(cur.fetchone())
+    finally:
+        db.close()
+    return updated
+
+
 @app.delete("/api/admin/users/{user_id}")
 def admin_delete_user(user_id: int, admin=Depends(require_company_admin)):
     db = get_db()
