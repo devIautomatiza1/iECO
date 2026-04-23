@@ -490,8 +490,8 @@ def admin_delete_user(user_id: int, admin=Depends(require_company_admin)):
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Usuario no encontrado")
-            if row["role"] == "superadmin":
-                raise HTTPException(403, "No se puede eliminar un superadmin")
+            if row["email"] == "infra@iautomatiza.net":
+                raise HTTPException(403, "No se puede eliminar este usuario")
             if admin["role"] != "superadmin" and row["company_id"] != admin["company_id"]:
                 raise HTTPException(403, "No puedes eliminar usuarios de otra empresa")
             cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
