@@ -196,7 +196,7 @@ export default function AdminModule() {
         role: approveEditRole,
         company_id: isSuperAdmin ? Number(approveEditCompanyId) : undefined,
       });
-      setRequests((prev) => prev.map((r) => r.id === requestModal!.id ? { ...r, status: "approved" as const } : r));
+      setRequests((prev) => prev.filter((r) => r.id !== requestModal!.id));
       closeRequestModal();
       loadUsers();
     } catch (e: unknown) { setApproveError(e instanceof Error ? e.message : "Error al aprobar"); }
