@@ -54,6 +54,7 @@ export default function AdminModule() {
   const [createUserError, setCreateUserError] = useState("");
 
   const [userSearch, setUserSearch] = useState("");
+  const [userCompanyFilter, setUserCompanyFilter] = useState<number | "">("");
 
   // ── Edit user state ────────────────────────────────────────────────────
   const [editUserId, setEditUserId] = useState<number | null>(null);
@@ -353,6 +354,18 @@ export default function AdminModule() {
                 style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)" }}
               />
             </div>
+            {/* Company filter */}
+            <select
+              value={userCompanyFilter}
+              onChange={(e) => setUserCompanyFilter(e.target.value === "" ? "" : Number(e.target.value))}
+              className="px-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors"
+              style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: userCompanyFilter === "" ? "var(--text-m)" : "var(--text-b)", maxWidth: "160px" }}
+            >
+              <option value="">Todas las empresas</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
             <div className="ml-auto flex items-center gap-2">
             <button onClick={loadUsers}
               className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
@@ -448,8 +461,8 @@ export default function AdminModule() {
               <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Usuarios registrados</h2>
               <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
                 style={{ background: "var(--surface)", color: "var(--text-m)" }}>
-                {userSearch
-                  ? `${users.filter(u => [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))).length} / ${users.length} usuarios`
+                {(userSearch || userCompanyFilter !== "")
+                  ? `${users.filter(u => (!userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))) && (userCompanyFilter === "" || u.company_id === userCompanyFilter)).length} / ${users.length} usuarios`
                   : `${users.length} usuarios`}
               </span>
             </div>
@@ -459,13 +472,13 @@ export default function AdminModule() {
               <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>No hay usuarios registrados</div>
             ) : (
               <div>
-                {users.filter(u => !userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))).length === 0 ? (
+                {users.filter(u => (!userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))) && (userCompanyFilter === "" || u.company_id === userCompanyFilter)).length === 0 ? (
                   <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>
-                    No hay resultados para &ldquo;{userSearch}&rdquo;
+                    No hay resultados para los filtros aplicados
                   </div>
                 ) : (
                   users
-                    .filter(u => !userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase())))
+                    .filter(u => (!userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))) && (userCompanyFilter === "" || u.company_id === userCompanyFilter))
                     .map((u, i) => (
                     <div key={u.id}>
                       <div className="flex items-center gap-4 px-5 py-4"
