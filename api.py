@@ -551,7 +551,7 @@ def admin_approve_request(req_id: int, body: Dict = Body({}), admin=Depends(requ
                 "VALUES (%s,%s,%s,%s,%s,TRUE,%s,NOW()) RETURNING id",
                 (email, req["password_hash"], name, req["company"], role, company_id)
             )
-            user_id = cur.fetchone()[0]
+            user_id = cur.fetchone()["id"]
             cur.execute(
                 "UPDATE registration_requests SET status='approved', reviewed_at=NOW(), reviewed_by=%s WHERE id=%s",
                 (admin["id"], req_id)
