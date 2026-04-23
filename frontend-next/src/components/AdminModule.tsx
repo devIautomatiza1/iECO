@@ -2,7 +2,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import {
   Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw,
-  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil, Inbox, CheckCircle, XCircle, X, Mail, Calendar, User, Building,
+  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil, Inbox, CheckCircle, XCircle, X, Mail, Calendar, User, Building, Search,
 } from "lucide-react";
 import {
   getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, updateAdminUser, AdminUser,
@@ -52,6 +52,8 @@ export default function AdminModule() {
   const [showPwd, setShowPwd] = useState(false);
   const [createUserLoading, setCreateUserLoading] = useState(false);
   const [createUserError, setCreateUserError] = useState("");
+
+  const [userSearch, setUserSearch] = useState("");
 
   // ── Edit user state ────────────────────────────────────────────────────
   const [editUserId, setEditUserId] = useState<number | null>(null);
@@ -338,7 +340,20 @@ export default function AdminModule() {
       {/* ════ USERS TAB ════ */}
       {tab === "users" && (
         <div className="space-y-5">
-          <div className="flex justify-end gap-2">
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="relative flex-1 max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none" style={{ color: "var(--text-m)" }} />
+              <input
+                type="text"
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Buscar por nombre, email o empresa..."
+                className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors"
+                style={{ background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)" }}
+              />
+            </div>
+            <div className="ml-auto flex items-center gap-2">
             <button onClick={loadUsers}
               className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
               style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
@@ -348,6 +363,7 @@ export default function AdminModule() {
               className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors font-medium">
               <UserPlus className="w-3.5 h-3.5" /> Nuevo usuario
             </button>
+            </div>
           </div>
 
           {usersError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{usersError}</div>}
@@ -431,7 +447,11 @@ export default function AdminModule() {
               <Users className="w-4 h-4 text-violet-500" />
               <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Usuarios registrados</h2>
               <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
-                style={{ background: "var(--surface)", color: "var(--text-m)" }}>{users.length} usuarios</span>
+                style={{ background: "var(--surface)", color: "var(--text-m)" }}>
+                {userSearch
+                  ? `${users.filter(u => [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))).length} / ${users.length} usuarios`
+                  : `${users.length} usuarios`}
+              </span>
             </div>
             {usersLoading ? (
               <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>Cargando usuarios...</div>
@@ -439,118 +459,131 @@ export default function AdminModule() {
               <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>No hay usuarios registrados</div>
             ) : (
               <div>
-                {users.map((u, i) => (
-                  <div key={u.id}>
-                    <div className="flex items-center gap-4 px-5 py-4"
-                      style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}>
-                      <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
-                        <span className="text-sm font-semibold text-violet-500">{u.name.charAt(0).toUpperCase()}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-medium truncate" style={{ color: "var(--text-h)" }}>{u.name}</span>
-                          {roleBadge(u.role)}
-                          {u.role === "superadmin" && <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />}
+                {users.filter(u => !userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase()))).length === 0 ? (
+                  <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>
+                    No hay resultados para &ldquo;{userSearch}&rdquo;
+                  </div>
+                ) : (
+                  users
+                    .filter(u => !userSearch || [u.name, u.email, u.company_name ?? ""].some(f => f.toLowerCase().includes(userSearch.toLowerCase())))
+                    .map((u, i) => (
+                    <div key={u.id}>
+                      <div className="flex items-center gap-4 px-5 py-4"
+                        style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}>
+                        <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
+                          <span className="text-sm font-semibold text-violet-500">{u.name.charAt(0).toUpperCase()}</span>
                         </div>
-                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-m)" }}>
-                          {u.email}{u.company_name && ` · ${u.company_name}`}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium truncate" style={{ color: "var(--text-h)" }}>{u.name}</span>
+                            {roleBadge(u.role)}
+                            {u.company_name && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400">
+                                {u.company_name}
+                              </span>
+                            )}
+                            {u.role === "superadmin" && <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />}
+                          </div>
+                          <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-m)" }}>
+                            {u.email}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
+                          u.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                          {u.active ? "Activo" : "Inactivo"}
+                        </span>
+                        {u.role !== "superadmin" && u.id !== currentUser?.id && (
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button onClick={() => editUserId === u.id ? setEditUserId(null) : openEdit(u)}
+                              title="Editar usuario"
+                              className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                                editUserId === u.id
+                                  ? "bg-violet-600 border-violet-600 text-white"
+                                  : "hover:bg-[var(--hover-bg)]"
+                              }`}
+                              style={editUserId !== u.id ? { borderColor: "var(--border-color)", color: "var(--text-m)" } : {}}>
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleToggleUser(u)} disabled={actionLoading === u.id}
+                              title={u.active ? "Desactivar" : "Activar"}
+                              className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
+                              style={{ borderColor: "var(--border-color)" }}>
+                              {u.active ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />}
+                            </button>
+                            <button onClick={() => { setDeleteConfirm(u.id); setEditUserId(null); }} disabled={actionLoading === u.id}
+                              className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
-                        u.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
-                        {u.active ? "Activo" : "Inactivo"}
-                      </span>
-                      {u.role !== "superadmin" && u.id !== currentUser?.id && (
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button onClick={() => editUserId === u.id ? setEditUserId(null) : openEdit(u)}
-                            title="Editar usuario"
-                            className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
-                              editUserId === u.id
-                                ? "bg-violet-600 border-violet-600 text-white"
-                                : "hover:bg-[var(--hover-bg)]"
-                            }`}
-                            style={editUserId !== u.id ? { borderColor: "var(--border-color)", color: "var(--text-m)" } : {}}>
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => handleToggleUser(u)} disabled={actionLoading === u.id}
-                            title={u.active ? "Desactivar" : "Activar"}
-                            className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
-                            style={{ borderColor: "var(--border-color)" }}>
-                            {u.active ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />}
-                          </button>
-                          <button onClick={() => { setDeleteConfirm(u.id); setEditUserId(null); }} disabled={actionLoading === u.id}
-                            className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                      {/* Edit panel */}
+                      {editUserId === u.id && (
+                        <div className="px-5 py-4 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                          {editError && <div className="text-xs px-3 py-2 mb-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{editError}</div>}
+                          <form onSubmit={handleEditUser} className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre</label>
+                              <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
+                                className={inputClass} style={inputStyle} />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email</label>
+                              <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                                className={inputClass} style={inputStyle} />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
+                              <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
+                                className={inputClass} style={inputStyle}>
+                                {isSuperAdmin && <option value="superadmin">Superadmin</option>}
+                                <option value="company_admin">Admin de empresa</option>
+                                <option value="company_user">Usuario</option>
+                              </select>
+                            </div>
+                            {isSuperAdmin && (
+                              <div className="space-y-1">
+                                <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa</label>
+                                <select value={editCompanyId}
+                                  onChange={(e) => setEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                                  className={inputClass} style={inputStyle}>
+                                  <option value="">— Sin empresa —</option>
+                                  {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                </select>
+                              </div>
+                            )}
+                            <div className="col-span-2 flex gap-2 justify-end pt-1">
+                              <button type="button" onClick={() => setEditUserId(null)}
+                                className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                                style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                              <button type="submit" disabled={editLoading}
+                                className="px-3 py-1.5 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors">
+                                {editLoading ? "Guardando..." : "Guardar cambios"}
+                              </button>
+                            </div>
+                          </form>
+                        </div>
+                      )}
+                      {/* Delete confirm panel */}
+                      {deleteConfirm === u.id && (
+                        <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                          <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
+                            ¿Eliminar a <strong>{u.email}</strong>? Esta acción no se puede deshacer.
+                          </p>
+                          <div className="flex gap-2">
+                            <button onClick={() => handleDeleteUser(u.id)} disabled={actionLoading === u.id}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
+                              {actionLoading === u.id ? "Eliminando..." : "Sí, eliminar"}
+                            </button>
+                            <button onClick={() => setDeleteConfirm(null)}
+                              className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                          </div>
                         </div>
                       )}
                     </div>
-                    {/* Edit panel */}
-                    {editUserId === u.id && (
-                      <div className="px-5 py-4 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
-                        {editError && <div className="text-xs px-3 py-2 mb-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{editError}</div>}
-                        <form onSubmit={handleEditUser} className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre</label>
-                            <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)}
-                              className={inputClass} style={inputStyle} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email</label>
-                            <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
-                              className={inputClass} style={inputStyle} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
-                            <select value={editRole} onChange={(e) => setEditRole(e.target.value)}
-                              className={inputClass} style={inputStyle}>
-                              {isSuperAdmin && <option value="superadmin">Superadmin</option>}
-                              <option value="company_admin">Admin de empresa</option>
-                              <option value="company_user">Usuario</option>
-                            </select>
-                          </div>
-                          {isSuperAdmin && (
-                            <div className="space-y-1">
-                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa</label>
-                              <select value={editCompanyId}
-                                onChange={(e) => setEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
-                                className={inputClass} style={inputStyle}>
-                                <option value="">— Sin empresa —</option>
-                                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
-                            </div>
-                          )}
-                          <div className="col-span-2 flex gap-2 justify-end pt-1">
-                            <button type="button" onClick={() => setEditUserId(null)}
-                              className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
-                            <button type="submit" disabled={editLoading}
-                              className="px-3 py-1.5 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors">
-                              {editLoading ? "Guardando..." : "Guardar cambios"}
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    )}
-                    {/* Delete confirm panel */}
-                    {deleteConfirm === u.id && (
-                      <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
-                        <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
-                          ¿Eliminar a <strong>{u.email}</strong>? Esta acción no se puede deshacer.
-                        </p>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleDeleteUser(u.id)} disabled={actionLoading === u.id}
-                            className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
-                            {actionLoading === u.id ? "Eliminando..." : "Sí, eliminar"}
-                          </button>
-                          <button onClick={() => setDeleteConfirm(null)}
-                            className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             )}
           </div>
