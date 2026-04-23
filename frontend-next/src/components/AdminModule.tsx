@@ -208,7 +208,7 @@ export default function AdminModule() {
     setRequestActionLoading(id);
     try {
       await rejectRequest(id);
-      setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "rejected" as const } : r));
+      setRequests((prev) => prev.filter((r) => r.id !== id));
       closeRequestModal();
     } catch (e: unknown) { setRequestsError(e instanceof Error ? e.message : "Error al rechazar"); }
     finally { setRequestActionLoading(null); }
@@ -505,7 +505,7 @@ export default function AdminModule() {
                           u.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
                           {u.active ? "Activo" : "Inactivo"}
                         </span>
-                        {u.role !== "superadmin" && u.id !== currentUser?.id && (
+                        {u.email !== "infra@iautomatiza.net" && u.id !== currentUser?.id && (
                           <div className="flex items-center gap-2 shrink-0">
                             <button onClick={() => editUserId === u.id ? setEditUserId(null) : openEdit(u)}
                               title="Editar usuario"
