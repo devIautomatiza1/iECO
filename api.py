@@ -1018,6 +1018,10 @@ async def generate_summary(recording_id: int, user=Depends(get_current_user)):
     if not row or not row[0]:
         raise HTTPException(400, "Primero transcribe el audio")
     transcription = row[0]
+    # Limitar tokens enviados a Gemini para evitar picos de TPM
+    MAX_CHARS = 20_000
+    if len(transcription) > MAX_CHARS:
+        transcription = transcription[:MAX_CHARS] + "\n\n[Transcripción truncada por longitud]"
     model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = f"""Genera un resumen ejecutivo profesional de esta transcripción de reunión.
 
@@ -1160,6 +1164,10 @@ async def analyze_opportunities(recording_id: int, user=Depends(get_current_user
     if not row or not row[0]:
         raise HTTPException(400, "Primero transcribe el audio")
     transcription = row[0]
+    # Limitar tokens enviados a Gemini para evitar picos de TPM
+    MAX_CHARS = 20_000
+    if len(transcription) > MAX_CHARS:
+        transcription = transcription[:MAX_CHARS] + "\n\n[Transcripción truncada por longitud]"
     model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = f"""Analiza esta transcripción de reunión de negocios y extrae TODAS las tareas, oportunidades y acciones pendientes.
 
@@ -1277,6 +1285,11 @@ async def chat(body: Dict = Body(...), user=Depends(get_current_user)):
         hist_text = "\n".join(
             [f"{'Usuario' if h['role']=='user' else 'Asistente'}: {h['content']}" for h in recent]
         )
+    # Limitar la transcripción para no superar el TPM de Gemini.
+    # ~12.000 chars ≈ 3.000 tokens, más que suficiente para reuniones normales.
+    MAX_TRANSCRIPTION_CHARS = 12_000
+    if len(transcription) > MAX_TRANSCRIPTION_CHARS:
+        transcription = transcription[:MAX_TRANSCRIPTION_CHARS] + "\n\n[Transcripción truncada por longitud]"
     prompt_parts = ["Eres un asistente inteligente de análisis de reuniones de negocios para iECO."]
     if recording_name:
         prompt_parts.append(f"Archivo analizado: {recording_name}")
