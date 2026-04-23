@@ -2,7 +2,7 @@
 Arrancar con: uvicorn api:app --reload --port 8000
 """
 from __future__ import annotations
-import hashlib, json, os, re, time, uuid
+import hashlib, json, os, re, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -50,48 +50,67 @@ if not _gemini_keys:
 
 genai.configure(api_key=_gemini_keys[0])
 
-# ─── Gemini helper con reintentos y rotación de clave ────────────────────────
+# ─── Gemini helper con cooldown por clave y rotación thread-safe ─────────────
+_gemini_lock = threading.Lock()
+_gemini_key_cooldowns: Dict[int, float] = {}  # índice → timestamp hasta el que está en pausa
+_COOLDOWN_SECONDS = 65  # ventana de rate limit de Gemini es 60s
+
 def _is_rate_limit_error(err_str: str) -> bool:
     return "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower()
 
 def _is_permanent_quota_error(err_str: str) -> bool:
-    """Cuota mensual/diaria agotada (no es un pico de RPM)."""
     el = err_str.lower()
     return "daily" in el or "monthly" in el or "billing" in el
 
 def _gemini_generate(model_name: str, prompt):
     """
-    Llama a Gemini con rotación automática de clave ante 429.
-    Prueba cada clave del pool una vez; si todas fallan por rate limit,
-    lanza HTTP 429 con mensaje claro.
+    Llama a Gemini eligiendo la primera clave disponible (no en cooldown).
+    Si falla con 429, marca esa clave en cooldown 65s y prueba la siguiente.
+    Thread-safe: usa un lock para configurar genai y crear el modelo.
     """
     global _gemini_key_index
     num_keys = len(_gemini_keys)
-    last_err = None
 
-    for attempt in range(num_keys * 2):  # hasta 2 vueltas al pool
-        key = _gemini_keys[_gemini_key_index % num_keys]
-        try:
+    for _ in range(num_keys):
+        with _gemini_lock:
+            now = time.time()
+            # Buscar la primera clave no en cooldown
+            chosen = None
+            for offset in range(num_keys):
+                idx = (_gemini_key_index + offset) % num_keys
+                if now >= _gemini_key_cooldowns.get(idx, 0):
+                    chosen = idx
+                    _gemini_key_index = (idx + 1) % num_keys
+                    break
+
+            if chosen is None:
+                # Todas en cooldown: calcular cuánto falta para la más próxima
+                soonest = min(_gemini_key_cooldowns.values()) - now
+                wait = max(int(soonest) + 1, 1)
+                raise HTTPException(429, f"Límite de Gemini alcanzado en las {num_keys} claves. Espera {wait} segundos e inténtalo de nuevo.")
+
+            key = _gemini_keys[chosen]
             genai.configure(api_key=key)
             model = genai.GenerativeModel(model_name)
+
+        # Llamada fuera del lock para no bloquear otras peticiones
+        try:
             return model.generate_content(prompt)
         except Exception as e:
             err_str = str(e)
-            last_err = err_str
             if _is_rate_limit_error(err_str):
                 if _is_permanent_quota_error(err_str):
                     raise HTTPException(429, "Cuota mensual de Gemini AI agotada. Revisa tu facturación en Google AI Studio.")
-                # Rotar a la siguiente clave
-                _gemini_key_index = (_gemini_key_index + 1) % num_keys
-                if attempt < num_keys - 1:
-                    time.sleep(1)
-                    continue
-                # Todas las claves agotadas → esperar y reintentar una vez más
-                time.sleep(5)
+                # Marcar esta clave en cooldown y reintentar con otra
+                with _gemini_lock:
+                    _gemini_key_cooldowns[chosen] = time.time() + _COOLDOWN_SECONDS
                 continue
-            raise  # error no relacionado con rate limit
+            raise
 
-    raise HTTPException(429, f"Límite de frecuencia alcanzado en todas las claves ({num_keys}). Espera 1 minuto.")
+    # Todas las claves fallaron
+    soonest = min((_gemini_key_cooldowns.get(i, 0) for i in range(num_keys)), default=0) - time.time()
+    wait = max(int(soonest) + 1, 60)
+    raise HTTPException(429, f"Límite de Gemini alcanzado en las {num_keys} claves. Espera {wait} segundos e inténtalo de nuevo.")
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="iECO API", version="1.0.0")
