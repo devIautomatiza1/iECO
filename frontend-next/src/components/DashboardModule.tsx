@@ -34,44 +34,40 @@ export default function DashboardModule({ onNavigate, onSelectRecording }: Dashb
       value: stats?.total_recordings ?? "—",
       sub: "total",
       icon: FileAudio,
-      color: "violet",
-      iconCls: "text-violet-500",
-      iconBg: "bg-violet-500/10",
-      valueCls: "text-violet-600 dark:text-violet-300",
-      bar: "bg-gradient-to-r from-violet-500 to-violet-400",
+      iconCls: "text-violet-400",
+      iconBg: "bg-violet-500",
+      glow: "rgba(124,58,237,0.18)",
+      gradient: "linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)",
     },
     {
       label: "Tickets abiertos",
       value: stats?.open_tickets ?? "—",
       sub: "sin resolver",
       icon: Ticket,
-      color: "amber",
-      iconCls: "text-amber-500",
-      iconBg: "bg-amber-500/10",
-      valueCls: "text-amber-600 dark:text-amber-300",
-      bar: "bg-gradient-to-r from-amber-500 to-amber-400",
+      iconCls: "text-amber-300",
+      iconBg: "bg-amber-500",
+      glow: "rgba(245,158,11,0.18)",
+      gradient: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)",
     },
     {
       label: "Resueltos",
       value: stats?.closed_tickets ?? "—",
       sub: "completados",
       icon: CheckCircle2,
-      color: "emerald",
-      iconCls: "text-emerald-500",
-      iconBg: "bg-emerald-500/10",
-      valueCls: "text-emerald-600 dark:text-emerald-300",
-      bar: "bg-gradient-to-r from-emerald-500 to-emerald-400",
+      iconCls: "text-emerald-300",
+      iconBg: "bg-emerald-500",
+      glow: "rgba(16,185,129,0.18)",
+      gradient: "linear-gradient(135deg, #059669 0%, #10b981 100%)",
     },
     {
       label: "Transcritas",
       value: stats?.transcribed ?? "—",
       sub: "con texto",
       icon: AlignLeft,
-      color: "indigo",
-      iconCls: "text-indigo-500",
-      iconBg: "bg-indigo-500/10",
-      valueCls: "text-indigo-600 dark:text-indigo-300",
-      bar: "bg-gradient-to-r from-indigo-500 to-indigo-400",
+      iconCls: "text-indigo-300",
+      iconBg: "bg-indigo-500",
+      glow: "rgba(99,102,241,0.18)",
+      gradient: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)",
     },
   ];
 
@@ -83,7 +79,7 @@ export default function DashboardModule({ onNavigate, onSelectRecording }: Dashb
         <div>
           <p className="text-xs font-medium mb-1" style={{ color: "var(--text-m)" }}>{greeting()}</p>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>
-            {firstName ? `Hola, ${firstName} 👋` : "Dashboard"}
+            {firstName ? `Hola, ${firstName}` : "Dashboard"}
           </h1>
           <p className="text-sm mt-1" style={{ color: "var(--text-m)" }}>Aquí tienes el resumen de tu actividad</p>
         </div>
@@ -94,22 +90,30 @@ export default function DashboardModule({ onNavigate, onSelectRecording }: Dashb
         {statCards.map((s) => (
           <div
             key={s.label}
-            className="rounded-2xl border overflow-hidden relative group"
-            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}
+            className="rounded-2xl border overflow-hidden relative"
+            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: `0 4px 24px ${s.glow}, var(--shadow-card)` }}
           >
-            <div className={`absolute top-0 left-0 right-0 h-0.5 ${s.bar}`} />
-            <div className="p-5 flex flex-col gap-4">
-              <div className="flex items-start justify-between">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${s.iconBg}`}>
-                  <s.icon className={`w-5 h-5 ${s.iconCls}`} />
-                </div>
+            <div className="p-5 flex flex-col gap-5">
+              {/* Icon with gradient bg */}
+              <div
+                className="w-11 h-11 rounded-xl flex items-center justify-center"
+                style={{ background: s.gradient, boxShadow: `0 4px 14px ${s.glow}` }}
+              >
+                <s.icon className={`w-5 h-5 text-white`} />
               </div>
               <div>
-                <div className={`text-3xl font-bold leading-none tracking-tight ${s.valueCls}`}>{String(s.value)}</div>
-                <div className="text-sm font-medium mt-2" style={{ color: "var(--text-b)" }}>{s.label}</div>
+                <div
+                  className="text-4xl font-extrabold leading-none tracking-tight"
+                  style={{ color: "var(--text-h)", fontVariantNumeric: "tabular-nums" }}
+                >
+                  {String(s.value)}
+                </div>
+                <div className="text-sm font-semibold mt-2.5" style={{ color: "var(--text-b)" }}>{s.label}</div>
                 <div className="text-xs mt-0.5" style={{ color: "var(--text-m)" }}>{s.sub}</div>
               </div>
             </div>
+            {/* Subtle bottom accent line */}
+            <div className="h-0.5 w-full" style={{ background: s.gradient }} />
           </div>
         ))}
       </div>
