@@ -85,7 +85,7 @@ export const login = (email: string, password: string) =>
   });
 
 export const register = (email: string, password: string, name: string, company: string) =>
-  request<{ token: string; user: User }>("/api/auth/register", {
+  request<{ message: string }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password, name, company }),
   });
@@ -216,6 +216,30 @@ export const updateAdminUser = (id: number, data: { name?: string; email?: strin
 
 export const deleteAdminUser = (id: number) =>
   request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" });
+
+// ─── Registration requests ─────────────────────────────────────────────────────
+export interface RegistrationRequest {
+  id: number;
+  name: string;
+  email: string;
+  company: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
+}
+
+export const getRegistrationRequests = () => request<RegistrationRequest[]>("/api/admin/requests");
+
+export const approveRequest = (
+  id: number,
+  data: { name?: string; email?: string; role?: string; company_id?: number | null }
+) => request<{ ok: boolean; user_id: number }>(`/api/admin/requests/${id}/approve`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const rejectRequest = (id: number) =>
+  request<{ ok: boolean }>(`/api/admin/requests/${id}/reject`, { method: "PATCH" });
+
+export const deleteRegistrationRequest = (id: number) =>
+  request<{ ok: boolean }>(`/api/admin/requests/${id}`, { method: "DELETE" });
 
 // ─── Companies ────────────────────────────────────────────────────────────────
 export interface Company {

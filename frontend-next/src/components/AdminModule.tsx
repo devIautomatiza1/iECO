@@ -2,11 +2,12 @@
 import { useState, useEffect, FormEvent } from "react";
 import {
   Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw,
-  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil,
+  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil, Inbox, CheckCircle, XCircle,
 } from "lucide-react";
 import {
   getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, updateAdminUser, AdminUser,
   getCompanies, createCompany, updateCompany, deleteCompany, Company,
+  getRegistrationRequests, approveRequest, rejectRequest, deleteRegistrationRequest, RegistrationRequest,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 
@@ -34,7 +35,7 @@ export default function AdminModule() {
   const { user: currentUser } = useAuth();
   const isSuperAdmin = currentUser?.role === "superadmin";
 
-  const [tab, setTab] = useState<"users" | "companies">("users");
+  const [tab, setTab] = useState<"users" | "companies" | "requests">("requests");
 
   // ── Users state ──────────────────────────────────────────────────────────
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -73,6 +74,20 @@ export default function AdminModule() {
   const [companyActionLoading, setCompanyActionLoading] = useState<number | null>(null);
   const [deleteCompanyConfirm, setDeleteCompanyConfirm] = useState<number | null>(null);
 
+  // ── Requests state ────────────────────────────────────────────────────
+  const [requests, setRequests] = useState<RegistrationRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
+  const [requestsError, setRequestsError] = useState("");
+  const [approveId, setApproveId] = useState<number | null>(null);
+  const [approveEditName, setApproveEditName] = useState("");
+  const [approveEditEmail, setApproveEditEmail] = useState("");
+  const [approveEditRole, setApproveEditRole] = useState("company_user");
+  const [approveEditCompanyId, setApproveEditCompanyId] = useState<number | "">("");
+  const [approveLoading, setApproveLoading] = useState(false);
+  const [approveError, setApproveError] = useState("");
+  const [rejectConfirmId, setRejectConfirmId] = useState<number | null>(null);
+  const [requestActionLoading, setRequestActionLoading] = useState<number | null>(null);
+
   const inputClass = "w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors";
   const inputStyle = { background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)" };
 
@@ -92,8 +107,16 @@ export default function AdminModule() {
     finally { setCompaniesLoading(false); }
   };
 
+  const loadRequests = async () => {
+    setRequestsLoading(true); setRequestsError("");
+    try { setRequests(await getRegistrationRequests()); }
+    catch (e: unknown) { setRequestsError(e instanceof Error ? e.message : "Error al cargar solicitudes"); }
+    finally { setRequestsLoading(false); }
+  };
+
   useEffect(() => {
     loadUsers();
+    loadRequests();
     if (isSuperAdmin) loadCompanies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin]);
@@ -137,6 +160,58 @@ export default function AdminModule() {
       setShowCreateUser(false);
     } catch (e: unknown) { setCreateUserError(e instanceof Error ? e.message : "Error al crear usuario"); }
     finally { setCreateUserLoading(false); }
+  };
+
+  const openApprove = (req: RegistrationRequest) => {
+    setApproveId(req.id);
+    setApproveEditName(req.name);
+    setApproveEditEmail(req.email);
+    setApproveEditRole("company_user");
+    setApproveEditCompanyId("");
+    setApproveError("");
+    setRejectConfirmId(null);
+  };
+
+  const handleApprove = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!approveEditName.trim() || !approveEditEmail.trim()) {
+      setApproveError("Nombre y email son obligatorios"); return;
+    }
+    if (isSuperAdmin && approveEditCompanyId === "") {
+      setApproveError("Debes seleccionar una empresa"); return;
+    }
+    setApproveLoading(true); setApproveError("");
+    try {
+      await approveRequest(approveId!, {
+        name: approveEditName.trim(),
+        email: approveEditEmail.trim(),
+        role: approveEditRole,
+        company_id: isSuperAdmin ? Number(approveEditCompanyId) : undefined,
+      });
+      setRequests((prev) => prev.map((r) => r.id === approveId ? { ...r, status: "approved" as const } : r));
+      setApproveId(null);
+      loadUsers();
+    } catch (e: unknown) { setApproveError(e instanceof Error ? e.message : "Error al aprobar"); }
+    finally { setApproveLoading(false); }
+  };
+
+  const handleReject = async (id: number) => {
+    setRequestActionLoading(id);
+    try {
+      await rejectRequest(id);
+      setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "rejected" as const } : r));
+      setRejectConfirmId(null);
+    } catch (e: unknown) { setRequestsError(e instanceof Error ? e.message : "Error al rechazar"); }
+    finally { setRequestActionLoading(null); }
+  };
+
+  const handleDeleteRequest = async (id: number) => {
+    setRequestActionLoading(id);
+    try {
+      await deleteRegistrationRequest(id);
+      setRequests((prev) => prev.filter((r) => r.id !== id));
+    } catch (e: unknown) { setRequestsError(e instanceof Error ? e.message : "Error al eliminar"); }
+    finally { setRequestActionLoading(null); }
   };
 
   const openEdit = (u: AdminUser) => {
@@ -215,20 +290,43 @@ export default function AdminModule() {
         </p>
       </div>
 
-      {/* Tabs (superadmin only) */}
-      {isSuperAdmin && (
-        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: "var(--surface)" }}>
-          {(["users", "companies"] as const).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
-                tab === t ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
-              }`}
-              style={tab !== t ? { color: "var(--text-m)" } : {}}>
-              {t === "users" ? <><Users className="w-4 h-4" /> Usuarios</> : <><Building2 className="w-4 h-4" /> Empresas</>}
-            </button>
-          ))}
-        </div>
-      )}
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: "var(--surface)" }}>
+        {/* Solicitudes — visible a todos los admins */}
+        <button onClick={() => setTab("requests")}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
+            tab === "requests" ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
+          }`}
+          style={tab !== "requests" ? { color: "var(--text-m)" } : {}}>
+          <Inbox className="w-4 h-4" />
+          Solicitudes
+          {requests.filter((r) => r.status === "pending").length > 0 && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center ${
+              tab === "requests" ? "bg-white/25 text-white" : "bg-violet-600 text-white"
+            }`}>
+              {requests.filter((r) => r.status === "pending").length}
+            </span>
+          )}
+        </button>
+        {/* Usuarios */}
+        <button onClick={() => setTab("users")}
+          className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
+            tab === "users" ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
+          }`}
+          style={tab !== "users" ? { color: "var(--text-m)" } : {}}>
+          <Users className="w-4 h-4" /> Usuarios
+        </button>
+        {/* Empresas — solo superadmin */}
+        {isSuperAdmin && (
+          <button onClick={() => setTab("companies")}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
+              tab === "companies" ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
+            }`}
+            style={tab !== "companies" ? { color: "var(--text-m)" } : {}}>
+            <Building2 className="w-4 h-4" /> Empresas
+          </button>
+        )}
+      </div>
 
       {/* ════ USERS TAB ════ */}
       {tab === "users" && (
@@ -439,6 +537,174 @@ export default function AdminModule() {
                             {actionLoading === u.id ? "Eliminando..." : "Sí, eliminar"}
                           </button>
                           <button onClick={() => setDeleteConfirm(null)}
+                            className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ════ REQUESTS TAB ════ */}
+      {tab === "requests" && (
+        <div className="space-y-5">
+          <div className="flex justify-end">
+            <button onClick={loadRequests}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+              <RefreshCw className="w-3.5 h-3.5" /> Actualizar
+            </button>
+          </div>
+
+          {requestsError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{requestsError}</div>}
+
+          <div className="rounded-xl border overflow-hidden"
+            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}>
+            <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: "var(--border-color)" }}>
+              <Inbox className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Solicitudes de acceso</h2>
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
+                style={{ background: "var(--surface)", color: "var(--text-m)" }}>
+                {requests.filter((r) => r.status === "pending").length} pendientes
+              </span>
+            </div>
+
+            {requestsLoading ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>Cargando solicitudes...</div>
+            ) : requests.length === 0 ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>No hay solicitudes</div>
+            ) : (
+              <div>
+                {requests.map((req, i) => (
+                  <div key={req.id}>
+                    <div className="flex items-center gap-4 px-5 py-4"
+                      style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}>
+                      {/* Avatar */}
+                      <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-semibold text-violet-500">{req.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium" style={{ color: "var(--text-h)" }}>{req.name}</span>
+                          {req.company && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-500/10 font-medium"
+                              style={{ color: "var(--text-m)" }}>{req.company}</span>
+                          )}
+                        </div>
+                        <p className="text-xs mt-0.5 truncate" style={{ color: "var(--text-m)" }}>
+                          {req.email} · {new Date(req.created_at).toLocaleDateString("es-ES")}
+                        </p>
+                      </div>
+                      {/* Status badge */}
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
+                        req.status === "pending"
+                          ? "bg-amber-500/15 text-amber-400"
+                          : req.status === "approved"
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "bg-red-500/15 text-red-400"
+                      }`}>
+                        {req.status === "pending" ? "Pendiente" : req.status === "approved" ? "Aprobada" : "Rechazada"}
+                      </span>
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {req.status === "pending" && (
+                          <>
+                            <button
+                              onClick={() => approveId === req.id ? setApproveId(null) : openApprove(req)}
+                              title="Aprobar solicitud"
+                              className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
+                                approveId === req.id
+                                  ? "bg-emerald-600 border-emerald-600 text-white"
+                                  : "border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
+                              }`}>
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => { setRejectConfirmId(req.id); setApproveId(null); }}
+                              disabled={requestActionLoading === req.id}
+                              title="Rechazar solicitud"
+                              className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        <button onClick={() => handleDeleteRequest(req.id)} disabled={requestActionLoading === req.id}
+                          title="Eliminar solicitud"
+                          className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Approve inline form */}
+                    {approveId === req.id && (
+                      <div className="px-5 py-4 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                        <p className="text-xs font-medium mb-3" style={{ color: "var(--text-m)" }}>
+                          Revisa y edita los datos antes de aprobar:
+                        </p>
+                        {approveError && <div className="text-xs px-3 py-2 mb-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{approveError}</div>}
+                        <form onSubmit={handleApprove} className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre</label>
+                            <input type="text" value={approveEditName} onChange={(e) => setApproveEditName(e.target.value)}
+                              className={inputClass} style={inputStyle} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email</label>
+                            <input type="email" value={approveEditEmail} onChange={(e) => setApproveEditEmail(e.target.value)}
+                              className={inputClass} style={inputStyle} />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
+                            <select value={approveEditRole} onChange={(e) => setApproveEditRole(e.target.value)}
+                              className={inputClass} style={inputStyle}>
+                              {isSuperAdmin && <option value="superadmin">Superadmin</option>}
+                              <option value="company_admin">Admin de empresa</option>
+                              <option value="company_user">Usuario</option>
+                            </select>
+                          </div>
+                          {isSuperAdmin && (
+                            <div className="space-y-1">
+                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa *</label>
+                              <select value={approveEditCompanyId}
+                                onChange={(e) => setApproveEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                                className={inputClass} style={inputStyle}>
+                                <option value="">— Selecciona empresa —</option>
+                                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                              </select>
+                            </div>
+                          )}
+                          <div className="col-span-2 flex gap-2 justify-end pt-1">
+                            <button type="button" onClick={() => setApproveId(null)}
+                              className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                            <button type="submit" disabled={approveLoading}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors">
+                              {approveLoading ? "Aprobando..." : "✓ Aprobar y crear usuario"}
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
+
+                    {/* Reject confirm */}
+                    {rejectConfirmId === req.id && (
+                      <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                        <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
+                          ¿Rechazar la solicitud de <strong>{req.email}</strong>?
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleReject(req.id)} disabled={requestActionLoading === req.id}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
+                            {requestActionLoading === req.id ? "Rechazando..." : "Sí, rechazar"}
+                          </button>
+                          <button onClick={() => setRejectConfirmId(null)}
                             className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
                             style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
                         </div>

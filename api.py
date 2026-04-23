@@ -99,6 +99,20 @@ def startup():
     try:
         conn = get_db()
         with conn.cursor() as cur:
+            # ── Tabla registration_requests ───────────────────────────────
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS registration_requests (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    company TEXT DEFAULT '',
+                    password_hash TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    reviewed_at TIMESTAMP,
+                    reviewed_by INTEGER
+                );
+            """)
             # ── Tabla companies (multi-tenant) ──────────────────────────────
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS companies (
@@ -291,15 +305,16 @@ def register(body: Dict = Body(...)):
             cur.execute("SELECT id FROM users WHERE email=%s", (email,))
             if cur.fetchone():
                 raise HTTPException(400, "El email ya está registrado")
+            cur.execute("SELECT id FROM registration_requests WHERE email=%s AND status='pending'", (email,))
+            if cur.fetchone():
+                raise HTTPException(400, "Ya existe una solicitud pendiente con ese email")
             cur.execute(
-                "INSERT INTO users (email, password_hash, name, company, role, active, created_at) VALUES (%s,%s,%s,%s,'company_user',TRUE,NOW()) RETURNING id",
-                (email, pw_hash, name, company)
+                "INSERT INTO registration_requests (name, email, company, password_hash, status, created_at) VALUES (%s,%s,%s,%s,'pending',NOW())",
+                (name, email, company, pw_hash)
             )
-            user_id = cur.fetchone()[0]
     finally:
         db.close()
-    token = create_token(user_id, email)
-    return {"token": token, "user": {"id": user_id, "email": email, "name": name, "company": company, "company_id": None, "role": "company_user"}}
+    return {"message": "Solicitud enviada correctamente. Un administrador la revisará en breve."}
 
 
 # ─── Admin helpers ─────────────────────────────────────────────────────────────
@@ -480,6 +495,98 @@ def admin_delete_user(user_id: int, admin=Depends(require_company_admin)):
             if admin["role"] != "superadmin" and row["company_id"] != admin["company_id"]:
                 raise HTTPException(403, "No puedes eliminar usuarios de otra empresa")
             cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
+    finally:
+        db.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN — Registration requests
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/admin/requests")
+def admin_list_requests(admin=Depends(require_company_admin)):
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, name, email, company, status, created_at, reviewed_at
+                FROM registration_requests
+                ORDER BY
+                    CASE status WHEN 'pending' THEN 0 ELSE 1 END,
+                    created_at DESC
+            """)
+            rows = [dict(r) for r in cur.fetchall()]
+    finally:
+        db.close()
+    return rows
+
+
+@app.patch("/api/admin/requests/{req_id}/approve")
+def admin_approve_request(req_id: int, body: Dict = Body({}), admin=Depends(require_company_admin)):
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM registration_requests WHERE id=%s", (req_id,))
+            req = cur.fetchone()
+            if not req:
+                raise HTTPException(404, "Solicitud no encontrada")
+            if req["status"] != "pending":
+                raise HTTPException(400, "La solicitud ya fue procesada")
+            name = (body.get("name") or req["name"]).strip()
+            email = (body.get("email") or req["email"]).strip().lower()
+            role = body.get("role") or "company_user"
+            company_id = body.get("company_id", None)
+            # company_admin: forzar su empresa y limitar roles
+            if admin["role"] == "company_admin":
+                company_id = admin["company_id"]
+                if role == "superadmin":
+                    raise HTTPException(403, "No puedes asignar el rol superadmin")
+            # Verificar unicidad de email
+            cur.execute("SELECT id FROM users WHERE email=%s", (email,))
+            if cur.fetchone():
+                raise HTTPException(409, "Ese email ya está en uso")
+            cur.execute(
+                "INSERT INTO users (email, password_hash, name, company, role, active, company_id, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,TRUE,%s,NOW()) RETURNING id",
+                (email, req["password_hash"], name, req["company"], role, company_id)
+            )
+            user_id = cur.fetchone()[0]
+            cur.execute(
+                "UPDATE registration_requests SET status='approved', reviewed_at=NOW(), reviewed_by=%s WHERE id=%s",
+                (admin["id"], req_id)
+            )
+    finally:
+        db.close()
+    return {"ok": True, "user_id": user_id}
+
+
+@app.patch("/api/admin/requests/{req_id}/reject")
+def admin_reject_request(req_id: int, admin=Depends(require_company_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT id, status FROM registration_requests WHERE id=%s", (req_id,))
+            req = cur.fetchone()
+            if not req:
+                raise HTTPException(404, "Solicitud no encontrada")
+            if req[1] != "pending":
+                raise HTTPException(400, "La solicitud ya fue procesada")
+            cur.execute(
+                "UPDATE registration_requests SET status='rejected', reviewed_at=NOW(), reviewed_by=%s WHERE id=%s",
+                (admin["id"], req_id)
+            )
+    finally:
+        db.close()
+    return {"ok": True}
+
+
+@app.delete("/api/admin/requests/{req_id}")
+def admin_delete_request(req_id: int, admin=Depends(require_company_admin)):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("DELETE FROM registration_requests WHERE id=%s", (req_id,))
     finally:
         db.close()
     return {"ok": True}

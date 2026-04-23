@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, ArrowRight } from "lucide-react";
 import Image from "next/image";
-import { register as apiRegister, setToken } from "@/lib/api";
+import { register as apiRegister } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -29,9 +30,8 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      const res = await apiRegister(email.trim(), password, name.trim(), company.trim());
-      setToken(res.token);
-      router.replace("/");
+      await apiRegister(email.trim(), password, name.trim(), company.trim());
+      setSubmitted(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error al registrarse");
     } finally {
@@ -47,6 +47,40 @@ export default function RegisterPage() {
     e.currentTarget.style.borderColor = "var(--border-med)";
     e.currentTarget.style.boxShadow = "none";
   };
+
+  if (submitted) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center px-4 py-10"
+        style={{ background: "var(--app-bg)" }}
+      >
+        <div
+          className="w-full max-w-[400px] rounded-3xl border p-10 flex flex-col items-center text-center space-y-4"
+          style={{
+            background: "var(--card-bg)",
+            borderColor: "var(--border-color)",
+            boxShadow: "0 20px 60px -10px rgba(0,0,0,0.15)",
+            animation: "loginFadeUp 0.5s cubic-bezier(0.16,1,0.3,1) both",
+          }}
+        >
+          <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center">
+            <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold" style={{ color: "var(--text-h)" }}>
+            ¡Solicitud enviada!
+          </h2>
+          <p className="text-sm" style={{ color: "var(--text-m)" }}>
+            Un administrador revisará tu solicitud y recibirás acceso cuando sea aprobada.
+          </p>
+          <Link href="/login" className="mt-2 text-sm font-semibold" style={{ color: "#0abde3" }}>
+            Volver al inicio de sesión →
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
