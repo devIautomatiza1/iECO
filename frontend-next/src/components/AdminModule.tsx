@@ -285,6 +285,7 @@ export default function AdminModule() {
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="space-y-6">
       {/* Header */}
       <div>
@@ -933,6 +934,7 @@ export default function AdminModule() {
         </div>
       </div>
     )}
+    </>
   );
 }
 
