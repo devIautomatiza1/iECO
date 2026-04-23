@@ -2,7 +2,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import {
   Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw,
-  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil, Inbox, CheckCircle, XCircle,
+  Eye, EyeOff, Building2, PlusCircle, ShieldCheck, Pencil, Inbox, CheckCircle, XCircle, X, Mail, Calendar, User, Building,
 } from "lucide-react";
 import {
   getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, updateAdminUser, AdminUser,
@@ -78,14 +78,14 @@ export default function AdminModule() {
   const [requests, setRequests] = useState<RegistrationRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const [requestsError, setRequestsError] = useState("");
-  const [approveId, setApproveId] = useState<number | null>(null);
+  const [requestModal, setRequestModal] = useState<RegistrationRequest | null>(null);
   const [approveEditName, setApproveEditName] = useState("");
   const [approveEditEmail, setApproveEditEmail] = useState("");
   const [approveEditRole, setApproveEditRole] = useState("company_user");
   const [approveEditCompanyId, setApproveEditCompanyId] = useState<number | "">("");
   const [approveLoading, setApproveLoading] = useState(false);
   const [approveError, setApproveError] = useState("");
-  const [rejectConfirmId, setRejectConfirmId] = useState<number | null>(null);
+  const [modalRejectConfirm, setModalRejectConfirm] = useState(false);
   const [requestActionLoading, setRequestActionLoading] = useState<number | null>(null);
 
   const inputClass = "w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors";
@@ -162,14 +162,20 @@ export default function AdminModule() {
     finally { setCreateUserLoading(false); }
   };
 
-  const openApprove = (req: RegistrationRequest) => {
-    setApproveId(req.id);
+  const openRequestModal = (req: RegistrationRequest) => {
+    setRequestModal(req);
     setApproveEditName(req.name);
     setApproveEditEmail(req.email);
     setApproveEditRole("company_user");
     setApproveEditCompanyId("");
     setApproveError("");
-    setRejectConfirmId(null);
+    setModalRejectConfirm(false);
+  };
+
+  const closeRequestModal = () => {
+    setRequestModal(null);
+    setApproveError("");
+    setModalRejectConfirm(false);
   };
 
   const handleApprove = async (e: FormEvent) => {
@@ -182,14 +188,14 @@ export default function AdminModule() {
     }
     setApproveLoading(true); setApproveError("");
     try {
-      await approveRequest(approveId!, {
+      await approveRequest(requestModal!.id, {
         name: approveEditName.trim(),
         email: approveEditEmail.trim(),
         role: approveEditRole,
         company_id: isSuperAdmin ? Number(approveEditCompanyId) : undefined,
       });
-      setRequests((prev) => prev.map((r) => r.id === approveId ? { ...r, status: "approved" as const } : r));
-      setApproveId(null);
+      setRequests((prev) => prev.map((r) => r.id === requestModal!.id ? { ...r, status: "approved" as const } : r));
+      closeRequestModal();
       loadUsers();
     } catch (e: unknown) { setApproveError(e instanceof Error ? e.message : "Error al aprobar"); }
     finally { setApproveLoading(false); }
@@ -200,7 +206,7 @@ export default function AdminModule() {
     try {
       await rejectRequest(id);
       setRequests((prev) => prev.map((r) => r.id === id ? { ...r, status: "rejected" as const } : r));
-      setRejectConfirmId(null);
+      closeRequestModal();
     } catch (e: unknown) { setRequestsError(e instanceof Error ? e.message : "Error al rechazar"); }
     finally { setRequestActionLoading(null); }
   };
@@ -613,27 +619,11 @@ export default function AdminModule() {
                       </span>
                       {/* Actions */}
                       <div className="flex items-center gap-2 shrink-0">
-                        {req.status === "pending" && (
-                          <>
-                            <button
-                              onClick={() => approveId === req.id ? setApproveId(null) : openApprove(req)}
-                              title="Aprobar solicitud"
-                              className={`p-1.5 rounded-lg border transition-colors disabled:opacity-50 ${
-                                approveId === req.id
-                                  ? "bg-emerald-600 border-emerald-600 text-white"
-                                  : "border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
-                              }`}>
-                              <CheckCircle className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => { setRejectConfirmId(req.id); setApproveId(null); }}
-                              disabled={requestActionLoading === req.id}
-                              title="Rechazar solicitud"
-                              className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
-                              <XCircle className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
+                        <button onClick={() => openRequestModal(req)} title="Ver / editar solicitud"
+                          className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
+                          style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+                          <Pencil className="w-4 h-4" />
+                        </button>
                         <button onClick={() => handleDeleteRequest(req.id)} disabled={requestActionLoading === req.id}
                           title="Eliminar solicitud"
                           className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
@@ -641,75 +631,6 @@ export default function AdminModule() {
                         </button>
                       </div>
                     </div>
-
-                    {/* Approve inline form */}
-                    {approveId === req.id && (
-                      <div className="px-5 py-4 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
-                        <p className="text-xs font-medium mb-3" style={{ color: "var(--text-m)" }}>
-                          Revisa y edita los datos antes de aprobar:
-                        </p>
-                        {approveError && <div className="text-xs px-3 py-2 mb-3 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{approveError}</div>}
-                        <form onSubmit={handleApprove} className="grid grid-cols-2 gap-3">
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre</label>
-                            <input type="text" value={approveEditName} onChange={(e) => setApproveEditName(e.target.value)}
-                              className={inputClass} style={inputStyle} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email</label>
-                            <input type="email" value={approveEditEmail} onChange={(e) => setApproveEditEmail(e.target.value)}
-                              className={inputClass} style={inputStyle} />
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
-                            <select value={approveEditRole} onChange={(e) => setApproveEditRole(e.target.value)}
-                              className={inputClass} style={inputStyle}>
-                              {isSuperAdmin && <option value="superadmin">Superadmin</option>}
-                              <option value="company_admin">Admin de empresa</option>
-                              <option value="company_user">Usuario</option>
-                            </select>
-                          </div>
-                          {isSuperAdmin && (
-                            <div className="space-y-1">
-                              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa *</label>
-                              <select value={approveEditCompanyId}
-                                onChange={(e) => setApproveEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
-                                className={inputClass} style={inputStyle}>
-                                <option value="">— Selecciona empresa —</option>
-                                {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                              </select>
-                            </div>
-                          )}
-                          <div className="col-span-2 flex gap-2 justify-end pt-1">
-                            <button type="button" onClick={() => setApproveId(null)}
-                              className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
-                            <button type="submit" disabled={approveLoading}
-                              className="px-3 py-1.5 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors">
-                              {approveLoading ? "Aprobando..." : "✓ Aprobar y crear usuario"}
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    )}
-
-                    {/* Reject confirm */}
-                    {rejectConfirmId === req.id && (
-                      <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
-                        <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
-                          ¿Rechazar la solicitud de <strong>{req.email}</strong>?
-                        </p>
-                        <div className="flex gap-2">
-                          <button onClick={() => handleReject(req.id)} disabled={requestActionLoading === req.id}
-                            className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
-                            {requestActionLoading === req.id ? "Rechazando..." : "Sí, rechazar"}
-                          </button>
-                          <button onClick={() => setRejectConfirmId(null)}
-                            className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
@@ -842,6 +763,176 @@ export default function AdminModule() {
         </div>
       )}
     </div>
+
+    {/* ════ REQUEST MODAL ════ */}
+    {requestModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+        onClick={(e) => { if (e.target === e.currentTarget) closeRequestModal(); }}>
+        <div className="w-full max-w-lg rounded-2xl border shadow-2xl overflow-hidden"
+          style={{ background: "var(--card-bg)", borderColor: "var(--border-color)" }}>
+
+          {/* Modal header */}
+          <div className="flex items-center gap-3 px-6 py-4 border-b" style={{ borderColor: "var(--border-color)" }}>
+            <div className="w-8 h-8 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
+              <Inbox className="w-4 h-4 text-violet-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Solicitud de acceso</h2>
+              <p className="text-xs" style={{ color: "var(--text-m)" }}>Revisa y edita los datos antes de aprobar</p>
+            </div>
+            <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
+              requestModal.status === "pending"
+                ? "bg-amber-500/15 text-amber-400"
+                : requestModal.status === "approved"
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-red-500/15 text-red-400"
+            }`}>
+              {requestModal.status === "pending" ? "Pendiente" : requestModal.status === "approved" ? "Aprobada" : "Rechazada"}
+            </span>
+            <button onClick={closeRequestModal}
+              className="p-1.5 rounded-lg transition-colors hover:bg-[var(--hover-bg)]"
+              style={{ color: "var(--text-m)" }}>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Original request info */}
+          <div className="px-6 py-4 border-b" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+            <p className="text-xs font-medium mb-3 uppercase tracking-wide" style={{ color: "var(--text-m)" }}>
+              Datos enviados por el solicitante
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2">
+                <User className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--text-m)" }} />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-m)" }}>Nombre</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--text-b)" }}>{requestModal.name}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Mail className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--text-m)" }} />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-m)" }}>Email</p>
+                  <p className="text-sm font-medium truncate" style={{ color: "var(--text-b)" }}>{requestModal.email}</p>
+                </div>
+              </div>
+              {requestModal.company && (
+                <div className="flex items-start gap-2">
+                  <Building className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--text-m)" }} />
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-m)" }}>Empresa indicada</p>
+                    <p className="text-sm font-medium" style={{ color: "var(--text-b)" }}>{requestModal.company}</p>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-2">
+                <Calendar className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "var(--text-m)" }} />
+                <div>
+                  <p className="text-[10px] uppercase tracking-wide" style={{ color: "var(--text-m)" }}>Fecha</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--text-b)" }}>
+                    {new Date(requestModal.created_at).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Edit form (only for pending) */}
+          {requestModal.status === "pending" && (
+            <form onSubmit={handleApprove}>
+              <div className="px-6 py-4 space-y-4">
+                <p className="text-xs font-medium uppercase tracking-wide" style={{ color: "var(--text-m)" }}>
+                  Configurar cuenta a crear
+                </p>
+                {approveError && (
+                  <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{approveError}</div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre *</label>
+                    <input type="text" value={approveEditName} onChange={(e) => setApproveEditName(e.target.value)}
+                      className={inputClass} style={inputStyle} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email *</label>
+                    <input type="email" value={approveEditEmail} onChange={(e) => setApproveEditEmail(e.target.value)}
+                      className={inputClass} style={inputStyle} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
+                    <select value={approveEditRole} onChange={(e) => setApproveEditRole(e.target.value)}
+                      className={inputClass} style={inputStyle}>
+                      {isSuperAdmin && <option value="superadmin">Superadmin</option>}
+                      <option value="company_admin">Admin de empresa</option>
+                      <option value="company_user">Usuario</option>
+                    </select>
+                  </div>
+                  {isSuperAdmin && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa *</label>
+                      <select value={approveEditCompanyId}
+                        onChange={(e) => setApproveEditCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                        className={inputClass} style={inputStyle}>
+                        <option value="">— Selecciona empresa —</option>
+                        {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Modal footer */}
+              <div className="px-6 py-4 border-t flex items-center justify-between gap-3"
+                style={{ borderColor: "var(--border-color)" }}>
+                {/* Reject section */}
+                {!modalRejectConfirm ? (
+                  <button type="button" onClick={() => setModalRejectConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors font-medium">
+                    <XCircle className="w-3.5 h-3.5" /> Rechazar
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs" style={{ color: "var(--text-m)" }}>¿Seguro?</span>
+                    <button type="button" onClick={() => handleReject(requestModal.id)}
+                      disabled={requestActionLoading === requestModal.id}
+                      className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
+                      {requestActionLoading === requestModal.id ? "Rechazando..." : "Sí, rechazar"}
+                    </button>
+                    <button type="button" onClick={() => setModalRejectConfirm(false)}
+                      className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                      style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={closeRequestModal}
+                    className="px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                    style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+                    Cancelar
+                  </button>
+                  <button type="submit" disabled={approveLoading}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium transition-colors">
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    {approveLoading ? "Aprobando..." : "Aprobar y crear usuario"}
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+
+          {/* Footer for non-pending (read-only) */}
+          {requestModal.status !== "pending" && (
+            <div className="px-6 py-4 border-t flex justify-end" style={{ borderColor: "var(--border-color)" }}>
+              <button onClick={closeRequestModal}
+                className="px-4 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+                Cerrar
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    )}
   );
 }
 
