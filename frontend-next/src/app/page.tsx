@@ -77,7 +77,7 @@ export default function Home() {
           />
         );
       case "admin":
-        return <AdminModule currentUserEmail={user.email} />;
+        return <AdminModule />;
       case "settings":
         return <SettingsModule isSuperAdmin={isSuperAdmin} />;
       default:

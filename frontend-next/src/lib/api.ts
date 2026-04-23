@@ -39,7 +39,8 @@ export interface User {
   email: string;
   name: string;
   company: string;
-  role: string;
+  company_id: number | null;
+  role: string; // 'superadmin' | 'company_admin' | 'company_user'
 }
 
 export interface Recording {
@@ -192,6 +193,8 @@ export interface AdminUser {
   name: string;
   role: string;
   company: string;
+  company_id: number | null;
+  company_name?: string;
   active: boolean;
   created_at: string;
 }
@@ -199,7 +202,7 @@ export interface AdminUser {
 export const getAdminUsers = () => request<AdminUser[]>("/api/admin/users");
 
 export const createAdminUser = (data: {
-  email: string; password: string; name: string; role: string; company: string;
+  email: string; password: string; name: string; role: string; company?: string; company_id?: number | null;
 }) => request<AdminUser>("/api/admin/users", { method: "POST", body: JSON.stringify(data) });
 
 export const toggleAdminUser = (id: number, active: boolean) =>
@@ -210,6 +213,29 @@ export const toggleAdminUser = (id: number, active: boolean) =>
 
 export const deleteAdminUser = (id: number) =>
   request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: "DELETE" });
+
+// ─── Companies ────────────────────────────────────────────────────────────────
+export interface Company {
+  id: number;
+  name: string;
+  slug: string;
+  active: boolean;
+  user_count?: number;
+  created_at: string;
+}
+
+export const getCompanies = () => request<Company[]>("/api/companies");
+
+export const createCompany = (name: string, slug: string) =>
+  request<Company>("/api/companies", { method: "POST", body: JSON.stringify({ name, slug }) });
+
+export const updateCompany = (id: number, data: Partial<Pick<Company, "name" | "slug" | "active">>) =>
+  request<{ ok: boolean }>(`/api/companies/${id}`, { method: "PATCH", body: JSON.stringify(data) });
+
+export const deleteCompany = (id: number) =>
+  request<{ ok: boolean }>(`/api/companies/${id}`, { method: "DELETE" });
+
+export const getMyCompany = () => request<Company>("/api/companies/mine");
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
 export const generateSummary = (recordingId: number) =>

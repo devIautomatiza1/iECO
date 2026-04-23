@@ -99,7 +99,17 @@ def startup():
     try:
         conn = get_db()
         with conn.cursor() as cur:
-            # Tabla users
+            # ── Tabla companies (multi-tenant) ──────────────────────────────
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS companies (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    slug TEXT UNIQUE NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            # ── Tabla users ─────────────────────────────────────────────────
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL PRIMARY KEY,
@@ -107,12 +117,20 @@ def startup():
                     password_hash TEXT NOT NULL,
                     name TEXT DEFAULT '',
                     company TEXT DEFAULT '',
-                    role TEXT DEFAULT 'user',
+                    role TEXT DEFAULT 'company_user',
                     active BOOLEAN DEFAULT TRUE,
                     created_at TIMESTAMP DEFAULT NOW()
                 );
             """)
-            # Tabla recordings (user_id opcional por compatibilidad)
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id INTEGER;")
+            try:
+                cur.execute("""
+                    ALTER TABLE users ADD CONSTRAINT fk_users_company
+                    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL;
+                """)
+            except Exception:
+                pass
+            # ── Tabla recordings ────────────────────────────────────────────
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS recordings (
                     id SERIAL PRIMARY KEY,
@@ -125,7 +143,15 @@ def startup():
                     updated_at TIMESTAMP DEFAULT NOW()
                 );
             """)
-            # Tabla opportunities
+            cur.execute("ALTER TABLE recordings ADD COLUMN IF NOT EXISTS company_id INTEGER;")
+            try:
+                cur.execute("""
+                    ALTER TABLE recordings ADD CONSTRAINT fk_recordings_company
+                    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE SET NULL;
+                """)
+            except Exception:
+                pass
+            # ── Tabla opportunities ─────────────────────────────────────────
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS opportunities (
                     id SERIAL PRIMARY KEY,
@@ -140,7 +166,6 @@ def startup():
                     created_at TIMESTAMP DEFAULT NOW()
                 );
             """)
-            # Migrar columnas extras si no existen (para BD ya existente)
             for col, defn in [
                 ("status",   "TEXT DEFAULT 'open'"),
                 ("priority", "TEXT DEFAULT 'medium'"),
@@ -152,6 +177,20 @@ def startup():
                     cur.execute(f"ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS {col} {defn};")
                 except Exception:
                     pass
+            # ── Migrar roles existentes ─────────────────────────────────────
+            cur.execute("UPDATE users SET role='company_admin' WHERE role='admin'")
+            cur.execute("UPDATE users SET role='company_user' WHERE role='user'")
+            for email in SUPERADMIN_EMAILS:
+                cur.execute("UPDATE users SET role='superadmin' WHERE email=%s", (email,))
+            # ── Propagar company_id a recordings desde su propietario ───────
+            cur.execute("""
+                UPDATE recordings r
+                SET company_id = u.company_id
+                FROM users u
+                WHERE r.user_id = u.id
+                  AND r.company_id IS NULL
+                  AND u.company_id IS NOT NULL;
+            """)
         conn.close()
     except Exception as e:
         print(f"[startup] Error migrando BD: {e}")
@@ -168,9 +207,22 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
         raise HTTPException(401, "No autorizado — incluye Bearer token")
     try:
         payload = jwt.decode(authorization.split(" ")[1], JWT_SECRET, algorithms=["HS256"])
-        return {"id": int(payload["sub"]), "email": payload["email"]}
+        user_id = int(payload["sub"])
     except JWTError:
         raise HTTPException(401, "Token inválido o expirado")
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, email, name, role, company_id, active FROM users WHERE id=%s",
+                (user_id,)
+            )
+            user = cur.fetchone()
+    finally:
+        db.close()
+    if not user or not user["active"]:
+        raise HTTPException(401, "Usuario no encontrado o inactivo")
+    return dict(user)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -213,7 +265,7 @@ def get_me(user=Depends(get_current_user)):
     db = get_db()
     try:
         with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id,email,name,company,role FROM users WHERE id=%s", (user["id"],))
+            cur.execute("SELECT id,email,name,company,company_id,role FROM users WHERE id=%s", (user["id"],))
             row = cur.fetchone()
     finally:
         db.close()
@@ -240,14 +292,14 @@ def register(body: Dict = Body(...)):
             if cur.fetchone():
                 raise HTTPException(400, "El email ya está registrado")
             cur.execute(
-                "INSERT INTO users (email, password_hash, name, company, role, active, created_at) VALUES (%s,%s,%s,%s,'user',TRUE,NOW()) RETURNING id",
+                "INSERT INTO users (email, password_hash, name, company, role, active, created_at) VALUES (%s,%s,%s,%s,'company_user',TRUE,NOW()) RETURNING id",
                 (email, pw_hash, name, company)
             )
             user_id = cur.fetchone()[0]
     finally:
         db.close()
     token = create_token(user_id, email)
-    return {"token": token, "user": {"id": user_id, "email": email, "name": name, "company": company, "role": "user"}}
+    return {"token": token, "user": {"id": user_id, "email": email, "name": name, "company": company, "company_id": None, "role": "company_user"}}
 
 
 # ─── Admin helpers ─────────────────────────────────────────────────────────────
@@ -255,9 +307,29 @@ SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"]
 
 
 def require_superadmin(user=Depends(get_current_user)):
-    if user["email"] not in SUPERADMIN_EMAILS:
+    if user["role"] != "superadmin":
         raise HTTPException(403, "Acceso denegado — solo superadmins")
     return user
+
+
+def require_company_admin(user=Depends(get_current_user)):
+    if user["role"] not in ("superadmin", "company_admin"):
+        raise HTTPException(403, "Acceso denegado — se requiere rol de administrador")
+    return user
+
+
+def _check_recording_access(user: Dict[str, Any], recording: Dict[str, Any]) -> None:
+    """Valida que el usuario tenga acceso a la grabación según su rol."""
+    role = user["role"]
+    if role == "superadmin":
+        return
+    if role == "company_admin":
+        if recording.get("company_id") != user.get("company_id"):
+            raise HTTPException(403, "No tienes acceso a esta grabación")
+        return
+    # company_user: solo sus propias grabaciones
+    if recording.get("user_id") != user["id"]:
+        raise HTTPException(403, "No tienes acceso a esta grabación")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -265,11 +337,27 @@ def require_superadmin(user=Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/admin/users")
-def admin_list_users(admin=Depends(require_superadmin)):
+def admin_list_users(admin=Depends(require_company_admin)):
     db = get_db()
     try:
         with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT id, email, name, role, company, active, created_at FROM users ORDER BY created_at DESC")
+            if admin["role"] == "superadmin":
+                cur.execute("""
+                    SELECT u.id, u.email, u.name, u.role, u.company, u.company_id,
+                           u.active, u.created_at, c.name AS company_name
+                    FROM users u
+                    LEFT JOIN companies c ON u.company_id = c.id
+                    ORDER BY u.created_at DESC
+                """)
+            else:
+                cur.execute("""
+                    SELECT u.id, u.email, u.name, u.role, u.company, u.company_id,
+                           u.active, u.created_at, c.name AS company_name
+                    FROM users u
+                    LEFT JOIN companies c ON u.company_id = c.id
+                    WHERE u.company_id=%s
+                    ORDER BY u.created_at DESC
+                """, (admin["company_id"],))
             rows = cur.fetchall()
     finally:
         db.close()
@@ -277,16 +365,28 @@ def admin_list_users(admin=Depends(require_superadmin)):
 
 
 @app.post("/api/admin/users")
-def admin_create_user(body: Dict = Body(...), admin=Depends(require_superadmin)):
+def admin_create_user(body: Dict = Body(...), admin=Depends(require_company_admin)):
     email = body.get("email", "").strip().lower()
     password = body.get("password", "")
     name = body.get("name", "").strip()
-    role = body.get("role", "user")
+    role = body.get("role", "company_user")
     company = body.get("company", "").strip()
+    company_id = body.get("company_id")
     if not email or not password or not name:
         raise HTTPException(400, "Email, nombre y contraseña son requeridos")
-    if role not in ("user", "admin"):
-        raise HTTPException(400, "Rol inválido")
+    if admin["role"] == "superadmin":
+        if role not in ("superadmin", "company_admin", "company_user"):
+            raise HTTPException(400, "Rol inválido")
+    else:
+        # company_admin solo puede crear usuarios en su empresa
+        if role not in ("company_admin", "company_user"):
+            raise HTTPException(400, "Rol inválido")
+        company_id = admin["company_id"]
+    if company_id is not None:
+        try:
+            company_id = int(company_id)
+        except (ValueError, TypeError):
+            raise HTTPException(400, "company_id inválido")
     pw_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     db = get_db()
     try:
@@ -295,23 +395,31 @@ def admin_create_user(body: Dict = Body(...), admin=Depends(require_superadmin))
             if cur.fetchone():
                 raise HTTPException(400, "El email ya existe")
             cur.execute(
-                "INSERT INTO users (email, password_hash, name, role, company, active, created_at) VALUES (%s,%s,%s,%s,%s,TRUE,NOW()) RETURNING id",
-                (email, pw_hash, name, role, company)
+                "INSERT INTO users (email, password_hash, name, role, company, company_id, active, created_at) VALUES (%s,%s,%s,%s,%s,%s,TRUE,NOW()) RETURNING id",
+                (email, pw_hash, name, role, company, company_id)
             )
             new_id = cur.fetchone()[0]
     finally:
         db.close()
-    return {"id": new_id, "email": email, "name": name, "role": role, "company": company, "active": True}
+    return {"id": new_id, "email": email, "name": name, "role": role, "company": company, "company_id": company_id, "active": True}
 
 
 @app.patch("/api/admin/users/{user_id}/toggle")
-def admin_toggle_user(user_id: int, body: Dict = Body(...), admin=Depends(require_superadmin)):
+def admin_toggle_user(user_id: int, body: Dict = Body(...), admin=Depends(require_company_admin)):
     active = body.get("active")
     if active is None:
         raise HTTPException(400, "Campo 'active' requerido")
     db = get_db()
     try:
-        with db.cursor() as cur:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT email, company_id, role FROM users WHERE id=%s", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Usuario no encontrado")
+            if admin["role"] != "superadmin" and row["company_id"] != admin["company_id"]:
+                raise HTTPException(403, "No puedes modificar usuarios de otra empresa")
+            if row["role"] == "superadmin":
+                raise HTTPException(403, "No se puede modificar un superadmin")
             cur.execute("UPDATE users SET active=%s WHERE id=%s", (bool(active), user_id))
     finally:
         db.close()
@@ -319,20 +427,117 @@ def admin_toggle_user(user_id: int, body: Dict = Body(...), admin=Depends(requir
 
 
 @app.delete("/api/admin/users/{user_id}")
-def admin_delete_user(user_id: int, admin=Depends(require_superadmin)):
+def admin_delete_user(user_id: int, admin=Depends(require_company_admin)):
     db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("SELECT email FROM users WHERE id=%s", (user_id,))
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT email, company_id, role FROM users WHERE id=%s", (user_id,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Usuario no encontrado")
-            if row[0] in SUPERADMIN_EMAILS:
+            if row["role"] == "superadmin":
                 raise HTTPException(403, "No se puede eliminar un superadmin")
+            if admin["role"] != "superadmin" and row["company_id"] != admin["company_id"]:
+                raise HTTPException(403, "No puedes eliminar usuarios de otra empresa")
             cur.execute("DELETE FROM users WHERE id=%s", (user_id,))
     finally:
         db.close()
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN — Company management
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/companies")
+def list_companies(admin=Depends(require_superadmin)):
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT c.id, c.name, c.slug, c.active, c.created_at,
+                       COUNT(u.id) AS user_count
+                FROM companies c
+                LEFT JOIN users u ON u.company_id = c.id
+                GROUP BY c.id
+                ORDER BY c.created_at DESC
+            """)
+            rows = cur.fetchall()
+    finally:
+        db.close()
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/companies")
+def create_company(body: Dict = Body(...), admin=Depends(require_superadmin)):
+    name = body.get("name", "").strip()
+    slug = body.get("slug", "").strip().lower()
+    if not name or not slug:
+        raise HTTPException(400, "Nombre y slug son requeridos")
+    import re as _re
+    if not _re.match(r'^[a-z0-9-]+$', slug):
+        raise HTTPException(400, "El slug solo puede contener letras minúsculas, números y guiones")
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id FROM companies WHERE slug=%s", (slug,))
+            if cur.fetchone():
+                raise HTTPException(400, "El slug ya está en uso")
+            cur.execute(
+                "INSERT INTO companies (name, slug, active, created_at) VALUES (%s,%s,TRUE,NOW()) RETURNING *",
+                (name, slug)
+            )
+            company = cur.fetchone()
+    finally:
+        db.close()
+    return dict(company)
+
+
+@app.patch("/api/companies/{company_id}")
+def update_company(company_id: int, body: Dict = Body(...), admin=Depends(require_superadmin)):
+    allowed = {"name", "slug", "active"}
+    updates = {k: v for k, v in body.items() if k in allowed}
+    if not updates:
+        return {"ok": True}
+    set_clause = ", ".join([f"{k}=%s" for k in updates])
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute(f"UPDATE companies SET {set_clause} WHERE id=%s", [*updates.values(), company_id])
+    finally:
+        db.close()
+    return {"ok": True}
+
+
+@app.delete("/api/companies/{company_id}")
+def delete_company(company_id: int, admin=Depends(require_superadmin)):
+    db = get_db()
+    try:
+        with db.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM users WHERE company_id=%s", (company_id,))
+            count = cur.fetchone()[0]
+            if count > 0:
+                raise HTTPException(400, f"No puedes eliminar una empresa con {count} usuario(s) activos. Elimínalos primero.")
+            cur.execute("DELETE FROM companies WHERE id=%s", (company_id,))
+    finally:
+        db.close()
+    return {"ok": True}
+
+
+@app.get("/api/companies/mine")
+def get_my_company(user=Depends(get_current_user)):
+    if not user.get("company_id"):
+        raise HTTPException(404, "No tienes empresa asignada")
+    db = get_db()
+    try:
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, name, slug, active, created_at FROM companies WHERE id=%s", (user["company_id"],))
+            company = cur.fetchone()
+    finally:
+        db.close()
+    if not company:
+        raise HTTPException(404, "Empresa no encontrada")
+    return dict(company)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -342,18 +547,44 @@ def admin_delete_user(user_id: int, admin=Depends(require_superadmin)):
 @app.get("/api/stats")
 def get_stats(user=Depends(get_current_user)):
     db = get_db()
+    role = user["role"]
+    cid = user.get("company_id")
+    uid = user["id"]
     try:
         with db.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM recordings")
-            total_recordings = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM recordings WHERE transcription IS NOT NULL AND transcription != ''")
-            transcribed = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM opportunities WHERE status='open'")
-            open_tickets = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM opportunities WHERE status='closed'")
-            closed_tickets = cur.fetchone()[0]
-            cur.execute("SELECT COUNT(*) FROM opportunities WHERE priority='high' AND status='open'")
-            high_priority = cur.fetchone()[0]
+            if role == "superadmin":
+                cur.execute("SELECT COUNT(*) FROM recordings")
+                total_recordings = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM recordings WHERE transcription IS NOT NULL AND transcription != ''")
+                transcribed = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities WHERE status='open'")
+                open_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities WHERE status='closed'")
+                closed_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities WHERE priority='high' AND status='open'")
+                high_priority = cur.fetchone()[0]
+            elif role == "company_admin":
+                cur.execute("SELECT COUNT(*) FROM recordings WHERE company_id=%s", (cid,))
+                total_recordings = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM recordings WHERE company_id=%s AND transcription IS NOT NULL AND transcription != ''", (cid,))
+                transcribed = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.company_id=%s AND o.status='open'", (cid,))
+                open_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.company_id=%s AND o.status='closed'", (cid,))
+                closed_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.company_id=%s AND o.priority='high' AND o.status='open'", (cid,))
+                high_priority = cur.fetchone()[0]
+            else:  # company_user
+                cur.execute("SELECT COUNT(*) FROM recordings WHERE user_id=%s", (uid,))
+                total_recordings = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM recordings WHERE user_id=%s AND transcription IS NOT NULL AND transcription != ''", (uid,))
+                transcribed = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.user_id=%s AND o.status='open'", (uid,))
+                open_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.user_id=%s AND o.status='closed'", (uid,))
+                closed_tickets = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM opportunities o JOIN recordings r ON o.recording_id=r.id WHERE r.user_id=%s AND o.priority='high' AND o.status='open'", (uid,))
+                high_priority = cur.fetchone()[0]
     finally:
         db.close()
     return {
@@ -372,14 +603,30 @@ def get_stats(user=Depends(get_current_user)):
 @app.get("/api/recordings")
 def list_recordings(user=Depends(get_current_user)):
     db = get_db()
+    role = user["role"]
     try:
         with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("""
-                SELECT id, filename,
-                       transcription IS NOT NULL AND transcription != '' AS transcribed,
-                       created_at
-                FROM recordings ORDER BY created_at DESC
-            """)
+            if role == "superadmin":
+                cur.execute("""
+                    SELECT id, filename,
+                           transcription IS NOT NULL AND transcription != '' AS transcribed,
+                           created_at, company_id, user_id
+                    FROM recordings ORDER BY created_at DESC
+                """)
+            elif role == "company_admin":
+                cur.execute("""
+                    SELECT id, filename,
+                           transcription IS NOT NULL AND transcription != '' AS transcribed,
+                           created_at, company_id, user_id
+                    FROM recordings WHERE company_id=%s ORDER BY created_at DESC
+                """, (user["company_id"],))
+            else:  # company_user
+                cur.execute("""
+                    SELECT id, filename,
+                           transcription IS NOT NULL AND transcription != '' AS transcribed,
+                           created_at, company_id, user_id
+                    FROM recordings WHERE user_id=%s ORDER BY created_at DESC
+                """, (user["id"],))
             rows = cur.fetchall()
     finally:
         db.close()
@@ -406,8 +653,8 @@ async def upload_recording(file: UploadFile = File(...), user=Depends(get_curren
     try:
         with db.cursor() as cur:
             cur.execute(
-                "INSERT INTO recordings (filename, filepath, user_id, user_email, created_at) VALUES (%s,%s,%s,%s,%s) RETURNING id",
-                (filename, str(filepath), user["id"], user["email"], datetime.now()),
+                "INSERT INTO recordings (filename, filepath, user_id, user_email, company_id, created_at) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id",
+                (filename, str(filepath), user["id"], user["email"], user.get("company_id"), datetime.now()),
             )
             recording_id = cur.fetchone()[0]
     finally:
@@ -419,29 +666,31 @@ async def upload_recording(file: UploadFile = File(...), user=Depends(get_curren
 def stream_audio(recording_id: int, user=Depends(get_current_user)):
     db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("SELECT filename FROM recordings WHERE id=%s", (recording_id,))
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT filename, user_id, company_id FROM recordings WHERE id=%s", (recording_id,))
             row = cur.fetchone()
     finally:
         db.close()
     if not row:
         raise HTTPException(404, "Grabación no encontrada")
-    path = RECORDINGS_DIR / row[0]
+    _check_recording_access(user, row)
+    path = RECORDINGS_DIR / row["filename"]
     if not path.exists():
         raise HTTPException(404, "Archivo de audio no encontrado en el servidor")
-    ext = row[0].rsplit(".", 1)[-1].lower()
-    return FileResponse(str(path), media_type=MIME_TYPES.get(ext, "audio/mpeg"), filename=row[0])
+    ext = row["filename"].rsplit(".", 1)[-1].lower()
+    return FileResponse(str(path), media_type=MIME_TYPES.get(ext, "audio/mpeg"), filename=row["filename"])
 
 
 @app.delete("/api/recordings/{recording_id}")
 def delete_recording(recording_id: int, user=Depends(get_current_user)):
     db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("SELECT filename FROM recordings WHERE id=%s", (recording_id,))
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT filename, user_id, company_id FROM recordings WHERE id=%s", (recording_id,))
             row = cur.fetchone()
             if row:
-                f = RECORDINGS_DIR / row[0]
+                _check_recording_access(user, row)
+                f = RECORDINGS_DIR / row["filename"]
                 if f.exists():
                     f.unlink()
                 cur.execute("DELETE FROM opportunities WHERE recording_id=%s", (recording_id,))
@@ -458,12 +707,13 @@ def rename_recording(recording_id: int, body: Dict = Body(...), user=Depends(get
         raise HTTPException(400, "Nombre requerido")
     db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("SELECT filename FROM recordings WHERE id=%s", (recording_id,))
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT filename, user_id, company_id FROM recordings WHERE id=%s", (recording_id,))
             row = cur.fetchone()
             if not row:
                 raise HTTPException(404, "Grabación no encontrada")
-            src = RECORDINGS_DIR / row[0]
+            _check_recording_access(user, row)
+            src = RECORDINGS_DIR / row["filename"]
             dst = RECORDINGS_DIR / new_name
             if src.exists():
                 src.rename(dst)
@@ -481,14 +731,17 @@ def rename_recording(recording_id: int, body: Dict = Body(...), user=Depends(get
 def get_transcription(recording_id: int, user=Depends(get_current_user)):
     db = get_db()
     try:
-        with db.cursor() as cur:
-            cur.execute("SELECT transcription FROM recordings WHERE id=%s", (recording_id,))
+        with db.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT transcription, user_id, company_id FROM recordings WHERE id=%s", (recording_id,))
             row = cur.fetchone()
     finally:
         db.close()
-    if not row or not row[0]:
+    if not row:
+        raise HTTPException(404, "Grabación no encontrada")
+    _check_recording_access(user, row)
+    if not row["transcription"]:
         raise HTTPException(404, "Sin transcripción disponible")
-    return {"transcription": row[0]}
+    return {"transcription": row["transcription"]}
 
 
 def _run_transcription_job(recording_id: int, job_id: str, audio_path_str: str, mime: str) -> None:

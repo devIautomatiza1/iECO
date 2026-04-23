@@ -1,410 +1,485 @@
 "use client";
 import { useState, useEffect, FormEvent } from "react";
 import {
-  Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw, Eye, EyeOff
+  Users, UserPlus, Trash2, ToggleLeft, ToggleRight, Shield, RefreshCw,
+  Eye, EyeOff, Building2, PlusCircle, ShieldCheck,
 } from "lucide-react";
 import {
   getAdminUsers, createAdminUser, toggleAdminUser, deleteAdminUser, AdminUser,
+  getCompanies, createCompany, updateCompany, deleteCompany, Company,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 
-const SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"];
-
-interface AdminModuleProps {
-  currentUserEmail: string;
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function roleBadge(role: string) {
+  const map: Record<string, string> = {
+    superadmin: "bg-violet-500/15 text-violet-400",
+    company_admin: "bg-amber-500/15 text-amber-400",
+    company_user: "bg-slate-500/15 text-slate-400",
+  };
+  const labels: Record<string, string> = {
+    superadmin: "superadmin",
+    company_admin: "admin",
+    company_user: "usuario",
+  };
+  return (
+    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${map[role] ?? "bg-slate-500/15 text-slate-400"}`}>
+      {labels[role] ?? role}
+    </span>
+  );
 }
 
-export default function AdminModule({ currentUserEmail }: AdminModuleProps) {
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [actionLoading, setActionLoading] = useState<number | null>(null);
 
-  // Create form state
+export default function AdminModule() {
+  const { user: currentUser } = useAuth();
+  const isSuperAdmin = currentUser?.role === "superadmin";
+
+  const [tab, setTab] = useState<"users" | "companies">("users");
+
+  // ── Users state ──────────────────────────────────────────────────────────
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [usersError, setUsersError] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [showCreateUser, setShowCreateUser] = useState(false);
   const [newEmail, setNewEmail] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newName, setNewName] = useState("");
-  const [newRole, setNewRole] = useState("user");
-  const [newCompany, setNewCompany] = useState("");
+  const [newRole, setNewRole] = useState("company_user");
+  const [newCompanyId, setNewCompanyId] = useState<number | "">("");
   const [showPwd, setShowPwd] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-  const [createError, setCreateError] = useState("");
+  const [createUserLoading, setCreateUserLoading] = useState(false);
+  const [createUserError, setCreateUserError] = useState("");
 
+  // ── Companies state ────────────────────────────────────────────────────
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [companiesError, setCompaniesError] = useState("");
+  const [showCreateCompany, setShowCreateCompany] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCompanySlug, setNewCompanySlug] = useState("");
+  const [createCompanyLoading, setCreateCompanyLoading] = useState(false);
+  const [createCompanyError, setCreateCompanyError] = useState("");
+  const [companyActionLoading, setCompanyActionLoading] = useState<number | null>(null);
+  const [deleteCompanyConfirm, setDeleteCompanyConfirm] = useState<number | null>(null);
+
+  const inputClass = "w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors";
+  const inputStyle = { background: "var(--surface)", borderColor: "var(--border-med)", color: "var(--text-b)" };
+
+  // ── Load data ─────────────────────────────────────────────────────────
   const loadUsers = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const data = await getAdminUsers();
-      setUsers(data);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error al cargar usuarios");
-    } finally {
-      setLoading(false);
-    }
+    setUsersLoading(true); setUsersError("");
+    try { setUsers(await getAdminUsers()); }
+    catch (e: unknown) { setUsersError(e instanceof Error ? e.message : "Error al cargar usuarios"); }
+    finally { setUsersLoading(false); }
   };
 
-  useEffect(() => { loadUsers(); }, []);
-
-  const handleToggle = async (user: AdminUser) => {
-    setActionLoading(user.id);
-    try {
-      await toggleAdminUser(user.id, !user.active);
-      setUsers((prev) =>
-        prev.map((u) => (u.id === user.id ? { ...u, active: !user.active } : u))
-      );
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error al cambiar estado");
-    } finally {
-      setActionLoading(null);
-    }
+  const loadCompanies = async () => {
+    if (!isSuperAdmin) return;
+    setCompaniesLoading(true); setCompaniesError("");
+    try { setCompanies(await getCompanies()); }
+    catch (e: unknown) { setCompaniesError(e instanceof Error ? e.message : "Error al cargar empresas"); }
+    finally { setCompaniesLoading(false); }
   };
 
-  const handleDelete = async (userId: number) => {
+  useEffect(() => {
+    loadUsers();
+    if (isSuperAdmin) loadCompanies();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuperAdmin]);
+
+  // ── User actions ───────────────────────────────────────────────────────
+  const handleToggleUser = async (u: AdminUser) => {
+    setActionLoading(u.id);
+    try {
+      await toggleAdminUser(u.id, !u.active);
+      setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, active: !u.active } : x)));
+    } catch (e: unknown) { setUsersError(e instanceof Error ? e.message : "Error al cambiar estado"); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleDeleteUser = async (userId: number) => {
     setActionLoading(userId);
     try {
       await deleteAdminUser(userId);
       setUsers((prev) => prev.filter((u) => u.id !== userId));
       setDeleteConfirm(null);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error al eliminar usuario");
-    } finally {
-      setActionLoading(null);
-    }
+    } catch (e: unknown) { setUsersError(e instanceof Error ? e.message : "Error al eliminar usuario"); }
+    finally { setActionLoading(null); }
   };
 
-  const handleCreate = async (e: FormEvent) => {
-    e.preventDefault();
-    setCreateError("");
+  const handleCreateUser = async (e: FormEvent) => {
+    e.preventDefault(); setCreateUserError("");
     if (!newEmail.trim() || !newPassword || !newName.trim()) {
-      setCreateError("Email, nombre y contraseña son obligatorios");
-      return;
+      setCreateUserError("Email, nombre y contraseña son obligatorios"); return;
     }
-    setCreateLoading(true);
+    if (isSuperAdmin && newCompanyId === "") {
+      setCreateUserError("Debes seleccionar una empresa"); return;
+    }
+    setCreateUserLoading(true);
     try {
       const created = await createAdminUser({
-        email: newEmail.trim(),
-        password: newPassword,
-        name: newName.trim(),
-        role: newRole,
-        company: newCompany.trim(),
+        email: newEmail.trim(), password: newPassword, name: newName.trim(), role: newRole,
+        company_id: isSuperAdmin ? (newCompanyId as number) : currentUser?.company_id ?? null,
       });
       setUsers((prev) => [{ ...created, created_at: new Date().toISOString() }, ...prev]);
-      setNewEmail(""); setNewPassword(""); setNewName(""); setNewRole("user"); setNewCompany("");
-      setShowCreateForm(false);
-    } catch (e: unknown) {
-      setCreateError(e instanceof Error ? e.message : "Error al crear usuario");
-    } finally {
-      setCreateLoading(false);
+      setNewEmail(""); setNewPassword(""); setNewName(""); setNewRole("company_user"); setNewCompanyId("");
+      setShowCreateUser(false);
+    } catch (e: unknown) { setCreateUserError(e instanceof Error ? e.message : "Error al crear usuario"); }
+    finally { setCreateUserLoading(false); }
+  };
+
+  // ── Company actions ────────────────────────────────────────────────────
+  const handleCreateCompany = async (e: FormEvent) => {
+    e.preventDefault(); setCreateCompanyError("");
+    if (!newCompanyName.trim() || !newCompanySlug.trim()) {
+      setCreateCompanyError("Nombre y slug son obligatorios"); return;
     }
+    setCreateCompanyLoading(true);
+    try {
+      const created = await createCompany(newCompanyName.trim(), newCompanySlug.trim());
+      setCompanies((prev) => [created, ...prev]);
+      setNewCompanyName(""); setNewCompanySlug(""); setShowCreateCompany(false);
+    } catch (e: unknown) { setCreateCompanyError(e instanceof Error ? e.message : "Error al crear empresa"); }
+    finally { setCreateCompanyLoading(false); }
   };
 
-  const inputStyle = {
-    background: "var(--surface)",
-    borderColor: "var(--border-med)",
-    color: "var(--text-b)",
+  const handleToggleCompany = async (company: Company) => {
+    setCompanyActionLoading(company.id);
+    try {
+      await updateCompany(company.id, { active: !company.active });
+      setCompanies((prev) => prev.map((c) => (c.id === company.id ? { ...c, active: !company.active } : c)));
+    } catch (e: unknown) { setCompaniesError(e instanceof Error ? e.message : "Error al actualizar empresa"); }
+    finally { setCompanyActionLoading(null); }
   };
-  const inputClass =
-    "w-full px-3 py-2 text-sm rounded-lg border focus:outline-none focus:border-violet-500/60 transition-colors";
 
+  const handleDeleteCompany = async (companyId: number) => {
+    setCompanyActionLoading(companyId);
+    try {
+      await deleteCompany(companyId);
+      setCompanies((prev) => prev.filter((c) => c.id !== companyId));
+      setDeleteCompanyConfirm(null);
+    } catch (e: unknown) { setCompaniesError(e instanceof Error ? e.message : "Error al eliminar empresa"); }
+    finally { setCompanyActionLoading(null); }
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>
-            Panel de administración
-          </h1>
-          <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>
-            Gestión de usuarios del sistema
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={loadUsers}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Actualizar
-          </button>
-          <button
-            onClick={() => { setShowCreateForm(!showCreateForm); setCreateError(""); }}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors font-medium"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            Nuevo usuario
-          </button>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight" style={{ color: "var(--text-h)" }}>
+          Panel de administración
+        </h1>
+        <p className="text-sm mt-1" style={{ color: "var(--text-b)" }}>
+          {isSuperAdmin ? "Gestión de empresas y usuarios" : "Gestión de usuarios de tu empresa"}
+        </p>
       </div>
 
-      {/* Error banner */}
-      {error && (
-        <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">
-          {error}
+      {/* Tabs (superadmin only) */}
+      {isSuperAdmin && (
+        <div className="flex gap-1 p-1 rounded-xl w-fit" style={{ background: "var(--surface)" }}>
+          {(["users", "companies"] as const).map((t) => (
+            <button key={t} onClick={() => setTab(t)}
+              className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-lg font-medium transition-all ${
+                tab === t ? "bg-violet-600 text-white shadow-sm" : "hover:bg-[var(--hover-bg)]"
+              }`}
+              style={tab !== t ? { color: "var(--text-m)" } : {}}>
+              {t === "users" ? <><Users className="w-4 h-4" /> Usuarios</> : <><Building2 className="w-4 h-4" /> Empresas</>}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* Create form */}
-      {showCreateForm && (
-        <div
-          className="rounded-xl border p-5 space-y-4"
-          style={{
-            background: "var(--card-bg)",
-            borderColor: "var(--border-color)",
-            boxShadow: "var(--shadow-card)",
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <Shield className="w-4 h-4 text-violet-500" />
-            <h3 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>
-              Crear nuevo usuario
-            </h3>
+      {/* ════ USERS TAB ════ */}
+      {tab === "users" && (
+        <div className="space-y-5">
+          <div className="flex justify-end gap-2">
+            <button onClick={loadUsers}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+              <RefreshCw className="w-3.5 h-3.5" /> Actualizar
+            </button>
+            <button onClick={() => { setShowCreateUser(!showCreateUser); setCreateUserError(""); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors font-medium">
+              <UserPlus className="w-3.5 h-3.5" /> Nuevo usuario
+            </button>
           </div>
 
-          {createError && (
-            <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">
-              {createError}
-            </div>
-          )}
+          {usersError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{usersError}</div>}
 
-          <form onSubmit={handleCreate} className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre *</label>
-              <input
-                type="text"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Nombre completo"
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email *</label>
-              <input
-                type="email"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                placeholder="usuario@empresa.com"
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa</label>
-              <input
-                type="text"
-                value={newCompany}
-                onChange={(e) => setNewCompany(e.target.value)}
-                placeholder="Nombre empresa"
-                className={inputClass}
-                style={inputStyle}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
-              <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                className={inputClass}
-                style={inputStyle}
-              >
-                <option value="user">Usuario</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="space-y-1 col-span-2 relative">
-              <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Contraseña *</label>
-              <div className="relative">
-                <input
-                  type={showPwd ? "text" : "password"}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                  className={`${inputClass} pr-10`}
-                  style={inputStyle}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwd(!showPwd)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  style={{ color: "var(--text-m)" }}
-                >
-                  {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+          {/* Create user form */}
+          {showCreateUser && (
+            <div className="rounded-xl border p-5 space-y-4"
+              style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}>
+              <div className="flex items-center gap-2">
+                <Shield className="w-4 h-4 text-violet-500" />
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Crear nuevo usuario</h3>
               </div>
-            </div>
-            <div className="col-span-2 flex gap-2 justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => { setShowCreateForm(false); setCreateError(""); }}
-                className="px-4 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                disabled={createLoading}
-                className="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors"
-              >
-                {createLoading ? "Creando..." : "Crear usuario"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Users table */}
-      <div
-        className="rounded-xl border overflow-hidden"
-        style={{
-          background: "var(--card-bg)",
-          borderColor: "var(--border-color)",
-          boxShadow: "var(--shadow-card)",
-        }}
-      >
-        <div
-          className="px-5 py-4 border-b flex items-center gap-2"
-          style={{ borderColor: "var(--border-color)" }}
-        >
-          <Users className="w-4 h-4 text-violet-500" />
-          <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>
-            Usuarios registrados
-          </h2>
-          <span
-            className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
-            style={{ background: "var(--surface)", color: "var(--text-m)" }}
-          >
-            {users.length} usuarios
-          </span>
-        </div>
-
-        {loading ? (
-          <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>
-            Cargando usuarios...
-          </div>
-        ) : users.length === 0 ? (
-          <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>
-            No hay usuarios registrados
-          </div>
-        ) : (
-          <div>
-            {users.map((user, i) => (
-              <div key={user.id}>
-                <div
-                  className="flex items-center gap-4 px-5 py-4"
-                  style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}
-                >
-                  {/* Avatar */}
-                  <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
-                    <span className="text-sm font-semibold text-violet-500">
-                      {user.name.charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium truncate" style={{ color: "var(--text-h)" }}>
-                        {user.name}
-                      </span>
-                      {SUPERADMIN_EMAILS.includes(user.email) && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-medium">
-                          superadmin
-                        </span>
-                      )}
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                        user.role === "admin"
-                          ? "bg-amber-500/15 text-amber-400"
-                          : "bg-slate-500/15 text-slate-400"
-                      }`}>
-                        {user.role}
-                      </span>
-                    </div>
-                    <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-m)" }}>
-                      {user.email}
-                      {user.company && ` · ${user.company}`}
-                    </p>
-                  </div>
-
-                  {/* Status badge */}
-                  <div className="shrink-0">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      user.active
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : "bg-red-500/15 text-red-400"
-                    }`}>
-                      {user.active ? "Activo" : "Inactivo"}
-                    </span>
-                  </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 shrink-0">
-                    {user.email !== currentUserEmail && (
-                      <button
-                        onClick={() => handleToggle(user)}
-                        disabled={actionLoading === user.id}
-                        title={user.active ? "Desactivar" : "Activar"}
-                        className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
-                        style={{ borderColor: "var(--border-color)", color: user.active ? "var(--text-m)" : "text-emerald-400" }}
-                      >
-                        {user.active
-                          ? <ToggleRight className="w-4 h-4 text-emerald-500" />
-                          : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />
-                        }
-                      </button>
-                    )}
-
-                    {!SUPERADMIN_EMAILS.includes(user.email) && user.email !== currentUserEmail && (
-                      <button
-                        onClick={() => setDeleteConfirm(user.id)}
-                        disabled={actionLoading === user.id}
-                        title="Eliminar usuario"
-                        className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+              {createUserError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{createUserError}</div>}
+              <form onSubmit={handleCreateUser} className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre *</label>
+                  <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)}
+                    placeholder="Nombre completo" className={inputClass} style={inputStyle} />
                 </div>
-
-                {/* Delete confirmation */}
-                {deleteConfirm === user.id && (
-                  <div
-                    className="px-5 py-3 border-t"
-                    style={{
-                      borderColor: "var(--border-color)",
-                      background: "var(--surface)",
-                    }}
-                  >
-                    <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
-                      ¿Eliminar a <strong>{user.email}</strong>? Esta acción no se puede deshacer.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        disabled={actionLoading === user.id}
-                        className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50"
-                      >
-                        {actionLoading === user.id ? "Eliminando..." : "Sí, eliminar"}
-                      </button>
-                      <button
-                        onClick={() => setDeleteConfirm(null)}
-                        className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
-                        style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}
-                      >
-                        Cancelar
-                      </button>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Email *</label>
+                  <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)}
+                    placeholder="usuario@empresa.com" className={inputClass} style={inputStyle} />
+                </div>
+                {isSuperAdmin ? (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa *</label>
+                    <select value={newCompanyId}
+                      onChange={(e) => setNewCompanyId(e.target.value === "" ? "" : Number(e.target.value))}
+                      className={inputClass} style={inputStyle}>
+                      <option value="">— Selecciona empresa —</option>
+                      {companies.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Empresa</label>
+                    <div className="px-3 py-2 text-sm rounded-lg border" style={{ ...inputStyle, opacity: 0.7 }}>
+                      {currentUser?.company || "Tu empresa"}
                     </div>
                   </div>
                 )}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Rol</label>
+                  <select value={newRole} onChange={(e) => setNewRole(e.target.value)}
+                    className={inputClass} style={inputStyle}>
+                    {isSuperAdmin && <option value="superadmin">Superadmin</option>}
+                    <option value="company_admin">Admin de empresa</option>
+                    <option value="company_user">Usuario</option>
+                  </select>
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Contraseña *</label>
+                  <div className="relative">
+                    <input type={showPwd ? "text" : "password"} value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)} placeholder="Mínimo 6 caracteres"
+                      className={`${inputClass} pr-10`} style={inputStyle} />
+                    <button type="button" onClick={() => setShowPwd(!showPwd)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-m)" }}>
+                      {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="col-span-2 flex gap-2 justify-end pt-1">
+                  <button type="button" onClick={() => { setShowCreateUser(false); setCreateUserError(""); }}
+                    className="px-4 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                    style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                  <button type="submit" disabled={createUserLoading}
+                    className="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors">
+                    {createUserLoading ? "Creando..." : "Crear usuario"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Users list */}
+          <div className="rounded-xl border overflow-hidden"
+            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}>
+            <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: "var(--border-color)" }}>
+              <Users className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Usuarios registrados</h2>
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
+                style={{ background: "var(--surface)", color: "var(--text-m)" }}>{users.length} usuarios</span>
+            </div>
+            {usersLoading ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>Cargando usuarios...</div>
+            ) : users.length === 0 ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>No hay usuarios registrados</div>
+            ) : (
+              <div>
+                {users.map((u, i) => (
+                  <div key={u.id}>
+                    <div className="flex items-center gap-4 px-5 py-4"
+                      style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}>
+                      <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
+                        <span className="text-sm font-semibold text-violet-500">{u.name.charAt(0).toUpperCase()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium truncate" style={{ color: "var(--text-h)" }}>{u.name}</span>
+                          {roleBadge(u.role)}
+                          {u.role === "superadmin" && <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />}
+                        </div>
+                        <p className="text-xs truncate mt-0.5" style={{ color: "var(--text-m)" }}>
+                          {u.email}{u.company_name && ` · ${u.company_name}`}
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
+                        u.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                        {u.active ? "Activo" : "Inactivo"}
+                      </span>
+                      {u.role !== "superadmin" && u.id !== currentUser?.id && (
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button onClick={() => handleToggleUser(u)} disabled={actionLoading === u.id}
+                            title={u.active ? "Desactivar" : "Activar"}
+                            className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
+                            style={{ borderColor: "var(--border-color)" }}>
+                            {u.active ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />}
+                          </button>
+                          <button onClick={() => setDeleteConfirm(u.id)} disabled={actionLoading === u.id}
+                            className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {deleteConfirm === u.id && (
+                      <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                        <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
+                          ¿Eliminar a <strong>{u.email}</strong>? Esta acción no se puede deshacer.
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleDeleteUser(u.id)} disabled={actionLoading === u.id}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
+                            {actionLoading === u.id ? "Eliminando..." : "Sí, eliminar"}
+                          </button>
+                          <button onClick={() => setDeleteConfirm(null)}
+                            className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ════ COMPANIES TAB (superadmin only) ════ */}
+      {tab === "companies" && isSuperAdmin && (
+        <div className="space-y-5">
+          <div className="flex justify-end gap-2">
+            <button onClick={loadCompanies}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+              style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>
+              <RefreshCw className="w-3.5 h-3.5" /> Actualizar
+            </button>
+            <button onClick={() => { setShowCreateCompany(!showCreateCompany); setCreateCompanyError(""); }}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 text-white transition-colors font-medium">
+              <Building2 className="w-3.5 h-3.5" /> Nueva empresa
+            </button>
+          </div>
+
+          {companiesError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{companiesError}</div>}
+
+          {showCreateCompany && (
+            <div className="rounded-xl border p-5 space-y-4"
+              style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-violet-500" />
+                <h3 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Crear nueva empresa</h3>
+              </div>
+              {createCompanyError && <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/25 text-red-500">{createCompanyError}</div>}
+              <form onSubmit={handleCreateCompany} className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>Nombre *</label>
+                  <input type="text" value={newCompanyName} onChange={(e) => setNewCompanyName(e.target.value)}
+                    placeholder="Acme S.A." className={inputClass} style={inputStyle} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium" style={{ color: "var(--text-m)" }}>
+                    Slug * <span style={{ fontWeight: 400 }}>(solo letras, números y guiones)</span>
+                  </label>
+                  <input type="text" value={newCompanySlug}
+                    onChange={(e) => setNewCompanySlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                    placeholder="acme-sa" className={inputClass} style={inputStyle} />
+                </div>
+                <div className="col-span-2 flex gap-2 justify-end pt-1">
+                  <button type="button" onClick={() => { setShowCreateCompany(false); setCreateCompanyError(""); }}
+                    className="px-4 py-2 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                    style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                  <button type="submit" disabled={createCompanyLoading}
+                    className="px-4 py-2 text-xs rounded-lg bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white font-medium transition-colors">
+                    {createCompanyLoading ? "Creando..." : "Crear empresa"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* Companies list */}
+          <div className="rounded-xl border overflow-hidden"
+            style={{ background: "var(--card-bg)", borderColor: "var(--border-color)", boxShadow: "var(--shadow-card)" }}>
+            <div className="px-5 py-4 border-b flex items-center gap-2" style={{ borderColor: "var(--border-color)" }}>
+              <Building2 className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-semibold" style={{ color: "var(--text-h)" }}>Empresas registradas</h2>
+              <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full"
+                style={{ background: "var(--surface)", color: "var(--text-m)" }}>{companies.length} empresas</span>
+            </div>
+            {companiesLoading ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>Cargando empresas...</div>
+            ) : companies.length === 0 ? (
+              <div className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-m)" }}>No hay empresas registradas</div>
+            ) : (
+              <div>
+                {companies.map((c, i) => (
+                  <div key={c.id}>
+                    <div className="flex items-center gap-4 px-5 py-4"
+                      style={i > 0 ? { borderTop: "1px solid var(--border-color)" } : undefined}>
+                      <div className="w-9 h-9 rounded-full bg-violet-500/15 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4 text-violet-500" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium" style={{ color: "var(--text-h)" }}>{c.name}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full font-mono bg-slate-500/10"
+                            style={{ color: "var(--text-m)" }}>{c.slug}</span>
+                        </div>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--text-m)" }}>
+                          {c.user_count ?? 0} usuario{(c.user_count ?? 0) !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded-full font-medium shrink-0 ${
+                        c.active ? "bg-emerald-500/15 text-emerald-400" : "bg-red-500/15 text-red-400"}`}>
+                        {c.active ? "Activa" : "Inactiva"}
+                      </span>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button onClick={() => handleToggleCompany(c)} disabled={companyActionLoading === c.id}
+                          className="p-1.5 rounded-lg border transition-colors hover:bg-[var(--hover-bg)] disabled:opacity-50"
+                          style={{ borderColor: "var(--border-color)" }}>
+                          {c.active ? <ToggleRight className="w-4 h-4 text-emerald-500" /> : <ToggleLeft className="w-4 h-4" style={{ color: "var(--text-m)" }} />}
+                        </button>
+                        <button onClick={() => setDeleteCompanyConfirm(c.id)} disabled={companyActionLoading === c.id}
+                          className="p-1.5 rounded-lg border border-red-500/20 text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                    {deleteCompanyConfirm === c.id && (
+                      <div className="px-5 py-3 border-t" style={{ borderColor: "var(--border-color)", background: "var(--surface)" }}>
+                        <p className="text-xs mb-2" style={{ color: "var(--text-b)" }}>
+                          ¿Eliminar empresa <strong>{c.name}</strong>? Solo es posible si no tiene usuarios asignados.
+                        </p>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleDeleteCompany(c.id)} disabled={companyActionLoading === c.id}
+                            className="px-3 py-1.5 text-xs rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium transition-colors disabled:opacity-50">
+                            {companyActionLoading === c.id ? "Eliminando..." : "Sí, eliminar"}
+                          </button>
+                          <button onClick={() => setDeleteCompanyConfirm(null)}
+                            className="px-3 py-1.5 text-xs rounded-lg border transition-colors hover:bg-[var(--hover-bg)]"
+                            style={{ borderColor: "var(--border-color)", color: "var(--text-m)" }}>Cancelar</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

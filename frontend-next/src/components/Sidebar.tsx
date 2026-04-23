@@ -10,8 +10,6 @@ import {
   Sun, Moon, User, ShieldCheck, Menu, X
 } from "lucide-react";
 
-const SUPERADMIN_EMAILS = ["infra@iautomatiza.net", "dev@iautomatiza.net"];
-
 const baseNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", id: "dashboard" },
   { icon: Mic, label: "Grabaciones", id: "audio" },
@@ -37,8 +35,8 @@ export default function Sidebar({ activeTab, onTabChange }: SidebarProps) {
   useEffect(() => setMounted(true), []);
 
   const isDark = theme === "dark";
-  const isSuperAdmin = user && SUPERADMIN_EMAILS.includes(user.email);
-  const navItems = isSuperAdmin
+  const isAdmin = user && (user.role === "superadmin" || user.role === "company_admin");
+  const navItems = isAdmin
     ? [...baseNavItems, { icon: ShieldCheck, label: "Admin", id: "admin" }]
     : baseNavItems;
 
