@@ -34,10 +34,23 @@ MIME_TYPES = {
 }
 ALLOWED_EXTS = set(MIME_TYPES.keys())
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
+# ─── Pool de claves Gemini (rotación automática ante 429) ────────────────────
+# Carga GEMINI_API_KEY + GEMINI_API_KEY_2 … GEMINI_API_KEY_9
+_gemini_keys: list[str] = [k for k in [
+    os.getenv("GEMINI_API_KEY", ""),
+    os.getenv("GEMINI_API_KEY_2", ""),
+    os.getenv("GEMINI_API_KEY_3", ""),
+    os.getenv("GEMINI_API_KEY_4", ""),
+    os.getenv("GEMINI_API_KEY_5", ""),
+] if k]
+_gemini_key_index = 0  # índice de la clave activa
 
-# ─── Gemini helper con reintentos ────────────────────────────────────────────
+if not _gemini_keys:
+    raise RuntimeError("Ninguna GEMINI_API_KEY configurada")
+
+genai.configure(api_key=_gemini_keys[0])
+
+# ─── Gemini helper con reintentos y rotación de clave ────────────────────────
 def _is_rate_limit_error(err_str: str) -> bool:
     return "429" in err_str or "quota" in err_str.lower() or "resource_exhausted" in err_str.lower()
 
@@ -46,22 +59,39 @@ def _is_permanent_quota_error(err_str: str) -> bool:
     el = err_str.lower()
     return "daily" in el or "monthly" in el or "billing" in el
 
-def _gemini_generate(model, prompt, max_retries: int = 3):
-    """Llama a model.generate_content con backoff exponencial en errores 429."""
-    for attempt in range(max_retries + 1):
+def _gemini_generate(model_name: str, prompt):
+    """
+    Llama a Gemini con rotación automática de clave ante 429.
+    Prueba cada clave del pool una vez; si todas fallan por rate limit,
+    lanza HTTP 429 con mensaje claro.
+    """
+    global _gemini_key_index
+    num_keys = len(_gemini_keys)
+    last_err = None
+
+    for attempt in range(num_keys * 2):  # hasta 2 vueltas al pool
+        key = _gemini_keys[_gemini_key_index % num_keys]
         try:
+            genai.configure(api_key=key)
+            model = genai.GenerativeModel(model_name)
             return model.generate_content(prompt)
         except Exception as e:
             err_str = str(e)
+            last_err = err_str
             if _is_rate_limit_error(err_str):
                 if _is_permanent_quota_error(err_str):
                     raise HTTPException(429, "Cuota mensual de Gemini AI agotada. Revisa tu facturación en Google AI Studio.")
-                if attempt < max_retries:
-                    wait = 2 ** attempt  # 1s → 2s → 4s
-                    time.sleep(wait)
+                # Rotar a la siguiente clave
+                _gemini_key_index = (_gemini_key_index + 1) % num_keys
+                if attempt < num_keys - 1:
+                    time.sleep(1)
                     continue
-                raise HTTPException(429, "Límite de frecuencia de Gemini alcanzado. Espera 1 minuto y vuelve a intentarlo.")
-            raise
+                # Todas las claves agotadas → esperar y reintentar una vez más
+                time.sleep(5)
+                continue
+            raise  # error no relacionado con rate limit
+
+    raise HTTPException(429, f"Límite de frecuencia alcanzado en todas las claves ({num_keys}). Espera 1 minuto.")
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(title="iECO API", version="1.0.0")
@@ -920,7 +950,6 @@ def get_transcription(recording_id: int, user=Depends(get_current_user)):
 def _run_transcription_job(recording_id: int, job_id: str, audio_path_str: str, mime: str) -> None:
     """Se ejecuta en un hilo separado para no bloquear el proxy."""
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
         audio_file = genai.upload_file(audio_path_str, mime_type=mime)
         prompt = """Transcribe esta conversación/reunión identificando CADA HABLANTE por separado.
 
@@ -933,18 +962,8 @@ REGLAS:
 - Mantén consistencia: el mismo hablante siempre tiene el mismo nombre
 - Transcribe textualmente sin parafrasear
 - NO incluyas explicaciones, solo el diálogo"""
-        # Reintentos con backoff para la transcripción (hilo secundario)
-        response = None
-        for attempt in range(4):
-            try:
-                response = model.generate_content([prompt, audio_file])
-                break
-            except Exception as e:
-                err_str = str(e)
-                if _is_rate_limit_error(err_str) and not _is_permanent_quota_error(err_str) and attempt < 3:
-                    time.sleep(2 ** attempt)
-                    continue
-                raise
+        # Usa _gemini_generate con rotación de claves
+        response = _gemini_generate("gemini-2.0-flash", [prompt, audio_file])
         transcription = response.text
         db = get_db()
         try:
@@ -1022,7 +1041,6 @@ async def generate_summary(recording_id: int, user=Depends(get_current_user)):
     MAX_CHARS = 20_000
     if len(transcription) > MAX_CHARS:
         transcription = transcription[:MAX_CHARS] + "\n\n[Transcripción truncada por longitud]"
-    model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = f"""Genera un resumen ejecutivo profesional de esta transcripción de reunión.
 
 TRANSCRIPCIÓN:
@@ -1037,7 +1055,7 @@ El resumen debe incluir:
 
 Redacta en español, con tono profesional y en formato claro. Usa negrita para los encabezados de cada sección."""
     try:
-        response = _gemini_generate(model, prompt)
+        response = _gemini_generate("gemini-2.0-flash", prompt)
         return {"summary": response.text}
     except HTTPException:
         raise
@@ -1168,7 +1186,6 @@ async def analyze_opportunities(recording_id: int, user=Depends(get_current_user
     MAX_CHARS = 20_000
     if len(transcription) > MAX_CHARS:
         transcription = transcription[:MAX_CHARS] + "\n\n[Transcripción truncada por longitud]"
-    model = genai.GenerativeModel("gemini-2.0-flash")
     prompt = f"""Analiza esta transcripción de reunión de negocios y extrae TODAS las tareas, oportunidades y acciones pendientes.
 
 TRANSCRIPCIÓN:
@@ -1185,7 +1202,7 @@ Responde ÚNICAMENTE con un JSON array (sin markdown, sin explicaciones):
   }}
 ]"""
     try:
-        response = _gemini_generate(model, prompt)
+        response = _gemini_generate("gemini-2.0-flash", prompt)
     except HTTPException:
         raise
     except Exception as e:
@@ -1305,8 +1322,7 @@ async def chat(body: Dict = Body(...), user=Depends(get_current_user)):
         f"\nPregunta del usuario: {question}"
     )
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = _gemini_generate(model, "\n".join(prompt_parts))
+        response = _gemini_generate("gemini-2.0-flash", "\n".join(prompt_parts))
         return {"response": response.text}
     except HTTPException:
         raise
